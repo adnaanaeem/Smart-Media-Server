@@ -2,7 +2,9 @@
 
 A lightweight, Python-based tool to share your movie collection over your local Wi-Fi network with a Netflix-style interface.
 
-![Screenshot](https://via.placeholder.com/800x400?text=Replace+This+With+Actual+Screenshot)
+![Screenshot](https://github.com/user-attachments/assets/2b0f5a53-a813-4634-9947-e75d54547377)
+
+![Screenshot](https://github.com/user-attachments/assets/7ecf64fe-1508-4085-a073-c7a3686a991b)
 
 ## ✨ Features
 - **One-Click Sharing:** Select a folder and start the server.
