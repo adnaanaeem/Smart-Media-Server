@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Media Server</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <style>
+        /* Progress Modal Styles */
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); align-items: center; justify-content: center; }
+        .modal-content { background-color: #1a1a1a; padding: 25px; border: 1px solid #444; width: 90%; max-width: 400px; border-radius: 8px; text-align: center; }
+        .progress-track { width: 100%; background-color: #333; height: 15px; border-radius: 10px; margin: 20px 0; overflow: hidden; }
+        .progress-fill { height: 100%; background-color: #00aaff; width: 0%; transition: width 0.3s; }
+        .status-text { color: #ccc; margin-bottom: 10px; }
+        .cancel-btn { background: #333; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="top-nav">
+        <div class="nav-content">
+            <h1 onclick="window.location.href='/'">🎬 MOVIE LIBRARY</h1>
+            <input type="text" id="search" placeholder="Search movies..." onkeyup="filterMovies()">
+            
+            <div class="controls">
+                {% if current_path != "" %}
+                    <a href="/view/{{ parent_path }}" class="btn">⬅ Back</a>
+                    <!-- ZIP DOWNLOAD BUTTON -->
+<button 
+    data-path="{{ current_path | replace('\\', '/') }}" 
+    onclick="startZip(this.getAttribute('data-path'))" 
+    class="btn" 
+    style="border-color:#00aaff; color:#00aaff;">
+    ⬇ Download Folder (Zip)
+</button>                {% endif %}
+                
+                <div style="font-size:12px; color:#666; margin-left:10px;">Sort:</div>
+                <a href="?sort=name" class="btn {{ 'active-sort' if sort_by=='name' }}">Name</a>
+                <a href="?sort=date" class="btn {{ 'active-sort' if sort_by=='date' }}">Date</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid" id="movieGrid">
+        {% for item in items %}
+        <a href="{{ item.url }}" class="card movie-item" data-name="{{ item.name|lower }}" data-id="{{ item.id }}">
+            <div class="thumbnail">
+                {% if item.is_dir %}📁{% else %}🎞️{% endif %}
+                <div class="progress-bg" id="prog-bg-{{ item.id }}">
+                    <div class="progress-bar" id="prog-bar-{{ item.id }}"></div>
+                </div>
+            </div>
+            <div class="details">
+                <span class="name">{{ item.name }}</span>
+                <div class="meta">
+                    <span>{{ 'Folder' if item.is_dir else item.size }}</span>
+                    <span id="status-{{ item.id }}">{{ item.time }}</span>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+
+    <!-- ZIP PROGRESS MODAL -->
+    <div id="zipModal" class="modal">
+        <div class="modal-content">
+            <h3 style="color:white; margin-top:0;">Compressing Folder...</h3>
+            <p id="zipStatus" class="status-text">Starting...</p>
+            <div class="progress-track">
+                <div id="zipBar" class="progress-fill"></div>
+            </div>
+            <button class="cancel-btn" onclick="closeZipModal()">Close</button>
+        </div>
+    </div>
+
+    <script>
+        function filterMovies() {
+            let input = document.getElementById('search').value.toLowerCase();
+            let items = document.getElementsByClassName('movie-item');
+            for (let i = 0; i < items.length; i++) {
+                let name = items[i].getAttribute('data-name');
+                items[i].classList.toggle('hidden', !name.includes(input));
+            }
+        }
+
+        // --- ZIP LOGIC ---
+        let zipInterval;
+
+        function startZip(path) {
+    document.getElementById('zipModal').style.display = 'flex';
+    document.getElementById('zipStatus').innerText = "Calculating size...";
+    document.getElementById('zipBar').style.width = "0%";
+    
+    // ADD encodeURIComponent HERE to handle spaces and symbols safely
+    fetch(`/api/start_zip/${encodeURIComponent(path)}`) 
+        .then(response => response.json())
+        .then(data => {
+            if (data.job_id) {
+                trackZip(data.job_id);
+            } else {
+                alert("Error starting zip");
+                closeZipModal();
+            }
+        });
+}
+
+        function trackZip(jobId) {
+    zipInterval = setInterval(() => {
+        // Added "?t=" + new Date().getTime() to prevent caching
+        fetch(`/api/zip_status/${jobId}?t=${new Date().getTime()}`)
+            .then(response => response.json())
+            .then(data => {
+                // Update Progress Bar
+                document.getElementById('zipBar').style.width = data.progress + "%";
+                document.getElementById('zipStatus').innerText = `Processing: ${data.progress}%`;
+
+                if (data.status === 'ready') {
+                    clearInterval(zipInterval);
+                    document.getElementById('zipStatus').innerText = "Download Starting!";
+                    document.getElementById('zipBar').style.backgroundColor = "#28a745";
+                    document.getElementById('zipBar').style.width = "100%";
+                    
+                    // Trigger Download
+                    window.location.href = `/api/download_zip_result/${jobId}`;
+                    
+                    // Close modal after 2 seconds
+                    setTimeout(closeZipModal, 2000);
+                } else if (data.status === 'error') {
+                    clearInterval(zipInterval);
+                    alert("Error creating zip file.");
+                    closeZipModal();
+                }
+            });
+    }, 1000); // Check every 1 second
+}
+
+        function closeZipModal() {
+            document.getElementById('zipModal').style.display = 'none';
+            if (zipInterval) clearInterval(zipInterval);
+        }
+
+        // --- WATCH HISTORY LOGIC ---
+        document.addEventListener("DOMContentLoaded", function() {
+            let cards = document.getElementsByClassName('movie-item');
+            for (let card of cards) {
+                let fileId = card.getAttribute('data-id');
+                let time = localStorage.getItem(fileId);
+                let duration = localStorage.getItem(fileId + "_total");
+                
+                if (time && duration && duration > 0) {
+                    let percent = (time / duration) * 100;
+                    let bg = document.getElementById('prog-bg-' + fileId);
+                    let bar = document.getElementById('prog-bar-' + fileId);
+                    
+                    if (bg && bar) {
+                        bg.style.display = 'block';
+                        bar.style.width = percent + '%';
+                        if (percent > 90) {
+                            bar.style.backgroundColor = '#28a745';
+                            document.getElementById('status-' + fileId).innerText = "✅ Watched";
+                            document.getElementById('status-' + fileId).style.color = "#28a745";
+                        } else {
+                            let timeLeft = Math.round((duration - time) / 60);
+                            document.getElementById('status-' + fileId).innerText = "⏳ " + timeLeft + "m left";
+                            document.getElementById('status-' + fileId).style.color = "#e50914";
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

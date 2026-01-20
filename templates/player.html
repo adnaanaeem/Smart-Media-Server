@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ filename }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <style>
+        body { background: black; color: white; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; }
+        video { width: 100%; max-width: 1000px; max-height: 70vh; border: 1px solid #333; box-shadow: 0 0 20px rgba(229, 9, 20, 0.3); }
+        .info { padding: 15px; text-align: center; width: 100%; max-width: 1000px; }
+        
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 10px; flex-wrap: wrap; }
+        .btn { color: #ccc; text-decoration: none; font-weight: bold; border: 1px solid #444; padding: 8px 15px; border-radius: 4px; transition: 0.3s; font-size: 13px; cursor: pointer; background: #1a1a1a; display: inline-flex; align-items: center; gap: 6px; }
+        .btn:hover { background: #333; color: white; }
+        
+        /* Specific Button Colors */
+        .vlc-btn { color: #ff8800; border-color: #ff8800; }
+        .vlc-btn:hover { background: #ff8800; color: white; }
+
+        .dl-btn { color: #00aaff; border-color: #00aaff; }
+        .dl-btn:hover { background: #00aaff; color: white; }
+        
+        .help-btn { border-color: #444; padding: 8px 12px; }
+
+        /* MODAL STYLES */
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); align-items: center; justify-content: center; }
+        .modal-content { background-color: #1a1a1a; padding: 25px; border: 1px solid #444; width: 90%; max-width: 400px; border-radius: 8px; text-align: left; position: relative; }
+        .close { color: #aaa; float: right; font-size: 24px; font-weight: bold; cursor: pointer; }
+        .copy-box { display: flex; gap: 5px; margin: 15px 0; }
+        .copy-box input { flex: 1; background: #333; border: 1px solid #555; color: white; padding: 8px; border-radius: 4px; }
+        .copy-btn { background: #007bff; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+        
+        #resume-msg { color: #aaa; margin-bottom: 10px; font-size: 14px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="info">
+        <div class="header-row">
+            <a href="javascript:history.back()" class="btn">⬅ Back</a>
+            
+            <div style="display:flex; gap: 8px;">
+                <!-- NEW DOWNLOAD BUTTON -->
+                <a href="/download/{{ filepath }}" download class="btn dl-btn" title="Download Video File">
+                    <span>⬇ Download</span>
+                </a>
+
+                <!-- VLC BUTTON -->
+                <a href="{{ vlc_link }}" class="btn vlc-btn" title="Open directly in VLC App">
+                    <span>⚠️ Open VLC</span>
+                </a>
+                
+                <button onclick="openModal()" class="btn help-btn" title="Manual Instructions">❓</button>
+            </div>
+        </div>
+        <div id="resume-msg">Resuming from where you left off...</div>
+    </div>
+
+    <video id="videoPlayer" controls autoplay crossorigin="anonymous">
+        <source src="/download/{{ filepath }}">
+        {% for sub in subtitles %}
+            <track label="{{ sub.label }}" kind="subtitles" srclang="{{ sub.lang }}" src="{{ sub.src }}" {% if loop.first %}default{% endif %}>
+        {% endfor %}
+        Your browser does not support the video tag.
+    </video>
+
+    <!-- HELP MODAL -->
+    <div id="helpModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h3 style="margin-top:0; color:#ff8800; border-bottom:1px solid #333; padding-bottom:10px;">🔊 How to Change Audio?</h3>
+            <p style="color:#ddd;">Browsers cannot switch audio tracks. You must use <b>VLC Player</b>.</p>
+            <p style="color:#ddd;"><b>💻 PC:</b> Copy link below, Open VLC > Ctrl + N > Paste.</p>
+            <div class="copy-box">
+                <input type="text" value="{{ stream_url }}" id="streamLink" readonly>
+                <button class="copy-btn" onclick="copyLink()">Copy</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('videoPlayer');
+        const fileId = "{{ file_id }}";
+        
+        // Memory Logic
+        const savedTime = localStorage.getItem(fileId);
+        if (savedTime && savedTime > 5) {
+            video.currentTime = savedTime;
+            document.getElementById('resume-msg').style.display = 'block';
+            setTimeout(() => { document.getElementById('resume-msg').style.display = 'none'; }, 3000);
+        }
+        video.addEventListener('timeupdate', () => {
+            localStorage.setItem(fileId, video.currentTime);
+            localStorage.setItem(fileId + "_total", video.duration);
+        });
+        video.addEventListener('ended', () => { localStorage.removeItem(fileId); });
+
+        // Modal Logic
+        var modal = document.getElementById("helpModal");
+        function openModal() { modal.style.display = "flex"; }
+        function closeModal() { modal.style.display = "none"; }
+        window.onclick = function(event) { if (event.target == modal) modal.style.display = "none"; }
+        function copyLink() {
+            var copyText = document.getElementById("streamLink");
+            copyText.select();
+            navigator.clipboard.writeText(copyText.value);
+            alert("Link copied!");
+        }
+    </script>
+</body>
+</html>
