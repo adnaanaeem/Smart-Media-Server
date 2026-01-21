@@ -44,3 +44,7 @@ A lightweight, Python-based tool to share your movie collection over your local 
 
 📄 License
 This project is open-source under the MIT License.
+
+## ⚖️ Credits & Attribution
+Movie metadata and posters are provided by **[The Movie Database (TMDB)](https://www.themoviedb.org/)**.
+This product uses the TMDB API but is not endorsed or certified by TMDB.
