@@ -11,6 +11,7 @@ import re
 import json
 import requests
 from functools import wraps
+from datetime import datetime
 from PIL import Image, ImageTk
 from flask import Flask, render_template, send_from_directory, send_file, abort, request, jsonify, after_this_request, session, redirect, url_for
 import tkinter as tk
@@ -21,11 +22,50 @@ app.secret_key = os.urandom(24)
 
 # --- CONFIGURATION ---
 PORT = 8000
-TMDB_API_KEY = "5ca06765ae8916dfe1431ad86b05a7f4"  # Your Key
+TMDB_API_KEY = "5ca06765ae8916dfe1431ad86b05a7f4" 
 SHARED_DIR = ""
 SERVER_URL = ""
 SERVER_PIN = ""
 ZIP_JOBS = {}
+CONFIG_FILE = "settings.json" # To save the folder path
+
+# --- CLIENT TRACKING STATE ---
+# Format: {'192.168.1.5': {'device': 'Android', 'last_seen': '14:30:05'}}
+CONNECTED_CLIENTS = {}
+
+# --- HELPER: Save/Load Settings ---
+def load_settings():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                data = json.load(f)
+                return data.get("last_folder", "")
+        except: pass
+    return ""
+
+def save_settings(path):
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump({"last_folder": path}, f)
+    except: pass
+
+# --- FLASK HOOK: Track Users ---
+@app.before_request
+def track_visitor():
+    try:
+        # Get IP
+        ip = request.remote_addr
+        # Ignore localhost (yourself)
+        if ip != '127.0.0.1':
+            # Get Device Info (e.g., "windows", "android", "iphone")
+            device = request.user_agent.platform or "Unknown"
+            if not device: device = "Browser"
+            
+            CONNECTED_CLIENTS[ip] = {
+                'device': device.capitalize(),
+                'last_seen': datetime.now().strftime("%H:%M:%S")
+            }
+    except: pass
 
 # --- HELPER: Clean Filename ---
 def parse_movie_name(filename):
@@ -55,8 +95,7 @@ def get_metadata(filename, folder_path, is_folder=False):
         try:
             with open(json_path, 'r') as f:
                 return json.load(f)
-        except:
-            pass
+        except: pass
 
     if not TMDB_API_KEY or "PASTE" in TMDB_API_KEY:
         return {"title": filename, "poster": None, "year": ""}
@@ -146,7 +185,6 @@ def background_zip_task(job_id, source_dir, temp_dir):
     except: ZIP_JOBS[job_id]['status'] = 'error'
 
 # --- ROUTES ---
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -190,7 +228,7 @@ def index(subpath=""):
             except OSError: continue
     except Exception: pass
 
-    # --- NEW: COUNT LOGIC ---
+    # Count logic
     total_folders = sum(1 for i in items_list if i['is_dir'])
     total_files = sum(1 for i in items_list if not i['is_dir'])
 
@@ -200,13 +238,7 @@ def index(subpath=""):
 
     return render_template('index.html', items=items_list, current_path=subpath, 
                            parent_path=os.path.dirname(subpath).replace("\\", "/"), sort_by=sort_by,
-                           count_folders=total_folders, count_files=total_files) # Pass counts to HTML
-    if sort_by == "date": items_list.sort(key=lambda x: x['time_raw'], reverse=True)
-    elif sort_by == "size": items_list.sort(key=lambda x: x['size_raw'], reverse=True)
-    else: items_list.sort(key=lambda x: x['name'].lower())
-
-    return render_template('index.html', items=items_list, current_path=subpath, 
-                           parent_path=os.path.dirname(subpath).replace("\\", "/"), sort_by=sort_by)
+                           count_folders=total_folders, count_files=total_files)
 
 @app.route('/api/metadata')
 @login_required
@@ -285,46 +317,132 @@ def download_zip_result(job_id):
 # --- GUI APP ---
 class MovieApp:
     def __init__(self, root):
-        self.root = root; self.root.title("Movie Server Control"); self.root.geometry("500x700"); self.root.resizable(False, False)
+        self.root = root
+        self.root.title("Movie Server Control")
+        self.root.geometry("500x750") # Taller for client list
+        self.root.resizable(False, False)
+        
         icon_path = os.path.join("static", "favicon.ico")
         if os.path.exists(icon_path):
             try: self.root.iconbitmap(icon_path) 
             except: pass
-        header_frame = tk.Frame(root, bg="#111"); header_frame.pack(fill="x")
+
+        header_frame = tk.Frame(root, bg="#111")
+        header_frame.pack(fill="x")
         tk.Label(header_frame, text="🎬 Movie Server", font=("Segoe UI", 16, "bold"), bg="#111", fg="#e50914").pack(pady=15)
-        self.frame_controls = tk.Frame(root); self.frame_controls.pack(pady=10)
+
+        self.frame_controls = tk.Frame(root)
+        self.frame_controls.pack(pady=10)
+
+        # FOLDER SELECTION
         tk.Label(self.frame_controls, text="Step 1: Select your Movies Folder", font=("Arial", 10)).pack()
-        self.btn_select = tk.Button(self.frame_controls, text="📁 Browse Folder", command=self.select_folder, width=20, bg="#ddd"); self.btn_select.pack(pady=5)
-        self.lbl_path = tk.Label(self.frame_controls, text="No folder selected", fg="gray", font=("Arial", 8), wraplength=400); self.lbl_path.pack(pady=5)
+        self.btn_select = tk.Button(self.frame_controls, text="📁 Browse Folder", command=self.select_folder, width=20, bg="#ddd")
+        self.btn_select.pack(pady=5)
+        self.lbl_path = tk.Label(self.frame_controls, text="No folder selected", fg="gray", font=("Arial", 8), wraplength=400)
+        self.lbl_path.pack(pady=5)
+
+        # LOAD SAVED FOLDER AUTOMATICALLY
+        global SHARED_DIR
+        saved_path = load_settings()
+        if saved_path and os.path.exists(saved_path):
+            SHARED_DIR = saved_path
+            self.lbl_path.config(text=SHARED_DIR, fg="black")
+            
+        # PIN ENTRY
         tk.Label(self.frame_controls, text="Step 2: Set PIN (Optional)", font=("Arial", 10)).pack(pady=(15, 5))
-        self.pin_entry = tk.Entry(self.frame_controls, show="*", justify="center", width=15, font=("Arial", 12)); self.pin_entry.pack()
+        self.pin_entry = tk.Entry(self.frame_controls, show="*", justify="center", width=15, font=("Arial", 12))
+        self.pin_entry.pack()
         tk.Label(self.frame_controls, text="(Leave empty for no password)", fg="gray", font=("Arial", 8)).pack()
-        self.btn_start = tk.Button(root, text="▶ START SERVER", state="disabled", command=self.run_s, bg="#28a745", fg="white", font=("Arial", 11, "bold"), width=20, height=2); self.btn_start.pack(pady=10)
-        self.frame_url = tk.Frame(root); self.frame_url.pack(pady=5)
-        self.txt_display = tk.Text(self.frame_url, height=1, width=35, state="disabled", bg="#f4f4f4", font=("Consolas", 10)); self.txt_display.pack(side="left", padx=5)
-        self.btn_copy = tk.Button(self.frame_url, text="📋 Copy", state="disabled", command=self.copy_link, bg="#007bff", fg="white"); self.btn_copy.pack(side="left")
-        self.qr_label = tk.Label(root); self.qr_label.pack(pady=10)
-        self.lbl_status = tk.Label(root, text="Waiting to start...", fg="#888", font=("Arial", 10, "italic")); self.lbl_status.pack(side="bottom", pady=20)
+        
+        # START BUTTON
+        state = "normal" if SHARED_DIR else "disabled"
+        self.btn_start = tk.Button(root, text="▶ START SERVER", state=state, command=self.run_s, bg="#28a745", fg="white", font=("Arial", 11, "bold"), width=20, height=2)
+        self.btn_start.pack(pady=10)
+
+        # URL DISPLAY
+        self.frame_url = tk.Frame(root)
+        self.frame_url.pack(pady=5)
+        self.txt_display = tk.Text(self.frame_url, height=1, width=35, state="disabled", bg="#f4f4f4", font=("Consolas", 10))
+        self.txt_display.pack(side="left", padx=5)
+        self.btn_copy = tk.Button(self.frame_url, text="📋 Copy", state="disabled", command=self.copy_link, bg="#007bff", fg="white")
+        self.btn_copy.pack(side="left")
+
+        # QR CODE
+        self.qr_label = tk.Label(root)
+        self.qr_label.pack(pady=10)
+        
+        self.lbl_status = tk.Label(root, text="Waiting to start...", fg="#888", font=("Arial", 10, "italic"))
+        self.lbl_status.pack(pady=5)
+
+        # --- CLIENT MONITOR LIST ---
+        tk.Label(root, text="Connected Devices (Live Log)", font=("Arial", 9, "bold"), fg="#555").pack(pady=(15, 2))
+        self.client_list = tk.Listbox(root, height=4, width=50, bg="#f0f0f0", font=("Consolas", 9))
+        self.client_list.pack(pady=5)
+        
+        # Start the UI updater loop
+        self.update_client_monitor()
+
+    def update_client_monitor(self):
+        # Refresh the listbox with connected clients
+        self.client_list.delete(0, tk.END)
+        if not CONNECTED_CLIENTS:
+            self.client_list.insert(tk.END, "No devices connected yet.")
+        else:
+            for ip, info in CONNECTED_CLIENTS.items():
+                entry = f"[{info['last_seen']}] {info['device']} ({ip})"
+                self.client_list.insert(tk.END, entry)
+        
+        # Check again in 2 seconds
+        self.root.after(2000, self.update_client_monitor)
 
     def select_folder(self):
-        global SHARED_DIR; path = filedialog.askdirectory()
-        if path: SHARED_DIR = os.path.abspath(path); self.lbl_path.config(text=SHARED_DIR, fg="black"); self.btn_start.config(state="normal"); self.lbl_status.config(text="Folder selected.", fg="#007bff")
+        global SHARED_DIR
+        path = filedialog.askdirectory()
+        if path:
+            SHARED_DIR = os.path.abspath(path)
+            self.lbl_path.config(text=SHARED_DIR, fg="black")
+            self.btn_start.config(state="normal")
+            self.lbl_status.config(text="Folder selected.", fg="#007bff")
+            # Save to config file
+            save_settings(SHARED_DIR)
 
-    def copy_link(self): self.root.clipboard_clear(); self.root.clipboard_append(SERVER_URL); self.lbl_status.config(text="✅ Link copied!", fg="#28a745")
+    def copy_link(self):
+        self.root.clipboard_clear()
+        self.root.clipboard_append(SERVER_URL)
+        self.lbl_status.config(text="✅ Link copied to clipboard!", fg="#28a745")
 
     def run_s(self):
-        global SERVER_URL, SERVER_PIN; SERVER_PIN = self.pin_entry.get().strip()
+        global SERVER_URL, SERVER_PIN
+        SERVER_PIN = self.pin_entry.get().strip()
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try: s.connect(("8.8.8.8", 80)); ip = s.getsockname()[0]
         except: ip = "127.0.0.1"
         finally: s.close()
+            
         SERVER_URL = f"http://{ip}:{PORT}"
         threading.Thread(target=lambda: app.run(host='0.0.0.0', port=PORT, use_reloader=False), daemon=True).start()
-        self.btn_start.config(text="SERVER RUNNING", state="disabled", bg="#555"); self.btn_select.config(state="disabled"); self.pin_entry.config(state="disabled"); self.btn_copy.config(state="normal"); self.txt_display.config(state="normal"); self.txt_display.delete("1.0", tk.END); self.txt_display.insert("1.0", SERVER_URL); self.txt_display.config(state="disabled")
-        qr = qrcode.QRCode(box_size=8, border=2); qr.add_data(SERVER_URL); qr.make(fit=True); img = qr.make_image(fill_color="black", back_color="white").resize((180, 180), Image.Resampling.LANCZOS)
-        self.tk_qr_image = ImageTk.PhotoImage(img); self.qr_label.config(image=self.tk_qr_image)
-        status_msg = "✅ Server Live!"; 
+        
+        self.btn_start.config(text="SERVER RUNNING", state="disabled", bg="#555")
+        self.btn_select.config(state="disabled")
+        self.pin_entry.config(state="disabled")
+        self.btn_copy.config(state="normal")
+        self.txt_display.config(state="normal")
+        self.txt_display.delete("1.0", tk.END)
+        self.txt_display.insert("1.0", SERVER_URL)
+        self.txt_display.config(state="disabled")
+        
+        qr = qrcode.QRCode(box_size=8, border=2)
+        qr.add_data(SERVER_URL)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white").resize((160, 160), Image.Resampling.LANCZOS)
+        self.tk_qr_image = ImageTk.PhotoImage(img)
+        self.qr_label.config(image=self.tk_qr_image)
+        
+        status_msg = "✅ Server Live!"
         if SERVER_PIN: status_msg += f" (PIN: {SERVER_PIN})"
         self.lbl_status.config(text=status_msg, fg="#28a745")
 
-if __name__ == "__main__": root = tk.Tk(); MovieApp(root); root.mainloop()
+if __name__ == "__main__":
+    root = tk.Tk()
+    MovieApp(root)
+    root.mainloop()
