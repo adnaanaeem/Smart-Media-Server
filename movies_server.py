@@ -10,15 +10,32 @@ import tempfile
 import re
 import json
 import requests
+import sys
 from functools import wraps
 from datetime import datetime
 from PIL import Image, ImageTk
-from flask import Flask, render_template, send_from_directory, send_file, abort, request, jsonify, after_this_request, session, redirect, url_for
+
+# UI Libraries
 import tkinter as tk
 from tkinter import filedialog
+import customtkinter as ctk 
+import pystray
+from pystray import MenuItem as item
 
-app = Flask(__name__)
-app.secret_key = os.urandom(24)
+from flask import Flask, render_template, send_from_directory, send_file, abort, request, jsonify, after_this_request, session, redirect, url_for
+
+# --- 1. CORRECT APP INITIALIZATION ---
+if getattr(sys, 'frozen', False):
+    # If running as EXE, use internal paths
+    template_folder = os.path.join(sys._MEIPASS, 'templates')
+    static_folder = os.path.join(sys._MEIPASS, 'static')
+    app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
+else:
+    # If running as Script, use normal paths
+    app = Flask(__name__)
+
+# --- 2. SET SECRET KEY AFTER INITIALIZATION ---
+app.secret_key = os.urandom(24) # <--- THIS FIXES THE ERROR
 
 # --- CONFIGURATION ---
 PORT = 8000
@@ -27,19 +44,14 @@ SHARED_DIR = ""
 SERVER_URL = ""
 SERVER_PIN = ""
 ZIP_JOBS = {}
-CONFIG_FILE = "settings.json" # To save the folder path
-
-# --- CLIENT TRACKING STATE ---
-# Format: {'192.168.1.5': {'device': 'Android', 'last_seen': '14:30:05'}}
 CONNECTED_CLIENTS = {}
+CONFIG_FILE = "settings.json"
 
-# --- HELPER: Save/Load Settings ---
+# --- HELPER FUNCTIONS ---
 def load_settings():
     if os.path.exists(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, 'r') as f:
-                data = json.load(f)
-                return data.get("last_folder", "")
+            with open(CONFIG_FILE, 'r') as f: return json.load(f).get("last_folder", "")
         except: pass
     return ""
 
@@ -47,27 +59,18 @@ def save_settings(path):
     try:
         with open(CONFIG_FILE, 'w') as f:
             json.dump({"last_folder": path}, f)
-    except: pass
+    except:
+        pass
 
-# --- FLASK HOOK: Track Users ---
 @app.before_request
 def track_visitor():
     try:
-        # Get IP
         ip = request.remote_addr
-        # Ignore localhost (yourself)
         if ip != '127.0.0.1':
-            # Get Device Info (e.g., "windows", "android", "iphone")
-            device = request.user_agent.platform or "Unknown"
-            if not device: device = "Browser"
-            
-            CONNECTED_CLIENTS[ip] = {
-                'device': device.capitalize(),
-                'last_seen': datetime.now().strftime("%H:%M:%S")
-            }
+            device = request.user_agent.platform or "Browser"
+            CONNECTED_CLIENTS[ip] = {'device': device.capitalize(), 'last_seen': datetime.now().strftime("%H:%M:%S")}
     except: pass
 
-# --- HELPER: Clean Filename ---
 def parse_movie_name(filename):
     name = os.path.splitext(filename)[0]
     is_tv = bool(re.search(r'\b(S\d+|Season)\b', name, re.IGNORECASE))
@@ -76,16 +79,13 @@ def parse_movie_name(filename):
     if match:
         year = match.group(0)
         name = name[:match.start()]
-    
     name = name.replace('.', ' ').replace('_', ' ').replace('(', '').replace(')', '').replace('[', '').replace(']', '')
-    junk_words = ["1080p", "720p", "480p", "4k", "2160p", "UHD", "HDR", "Bluray", "WebRip", "Web-DL", "HDTV", "CAM", "TS", "H264", "H265", "x264", "x265", "AAC", "DDP5", "PSA", "RARBG", "YIFY"]
+    junk_words = ["1080p", "720p", "480p", "4k", "HDR", "Bluray", "WebRip", "x265", "AAC", "RARBG", "PSA", "YIFY"]
     for word in junk_words:
         pattern = re.compile(r'\b' + re.escape(word) + r'\b', re.IGNORECASE)
         name = pattern.sub('', name)
-
     return name.strip(), year, is_tv
 
-# --- HELPER: Fetch Metadata ---
 def get_metadata(filename, folder_path, is_folder=False):
     meta_dir = os.path.join(folder_path, ".meta")
     if not os.path.exists(meta_dir): os.makedirs(meta_dir)
@@ -95,44 +95,35 @@ def get_metadata(filename, folder_path, is_folder=False):
         try:
             with open(json_path, 'r') as f:
                 return json.load(f)
-        except: pass
-
-    if not TMDB_API_KEY or "PASTE" in TMDB_API_KEY:
-        return {"title": filename, "poster": None, "year": ""}
+        except:
+            pass
 
     title, year, is_tv_guess = parse_movie_name(filename)
     is_tv = True if is_folder else is_tv_guess
     endpoint = "tv" if is_tv else "movie"
-    
     search_url = f"https://api.themoviedb.org/3/search/{endpoint}?api_key={TMDB_API_KEY}&query={urllib.parse.quote(title)}"
     if year and not is_tv: search_url += f"&year={year}"
 
     try:
         response = requests.get(search_url, timeout=3).json()
         results = response.get('results')
-
         if results:
             media = results[0]
             poster_path = media.get('poster_path')
             local_poster = None
             if poster_path:
-                try:
-                    img_url = f"https://image.tmdb.org/t/p/w500{poster_path}"
-                    img_data = requests.get(img_url).content
-                    img_name = f"{filename}.jpg"
-                    with open(os.path.join(meta_dir, img_name), 'wb') as f: f.write(img_data)
-                    local_poster = f"/metadata_img/{urllib.parse.quote(os.path.relpath(os.path.join(meta_dir, img_name), SHARED_DIR))}"
-                except: pass
-
+                img_url = f"https://image.tmdb.org/t/p/w500{poster_path}"
+                img_data = requests.get(img_url).content
+                img_name = f"{filename}.jpg"
+                with open(os.path.join(meta_dir, img_name), 'wb') as f: f.write(img_data)
+                local_poster = f"/metadata_img/{urllib.parse.quote(os.path.relpath(os.path.join(meta_dir, img_name), SHARED_DIR))}"
+            
             final_title = media.get('name') if is_tv else media.get('title')
-            final_date = media.get('first_air_date') if is_tv else media.get('release_date')
-            final_year = final_date[:4] if final_date else year
-
+            final_year = (media.get('first_air_date') if is_tv else media.get('release_date'))[:4]
             data = {"title": final_title, "year": final_year, "poster": local_poster, "rating": media.get('vote_average'), "is_tv": is_tv}
             with open(json_path, 'w') as f: json.dump(data, f)
             return data
-    except Exception as e: print(f"Error fetching {filename}: {e}")
-
+    except: pass
     failed_data = {"title": title, "poster": None, "year": year}
     with open(json_path, 'w') as f: json.dump(failed_data, f)
     return failed_data
@@ -145,8 +136,7 @@ def get_size_format(b):
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if SERVER_PIN and not session.get('authenticated'):
-            return redirect(url_for('login'))
+        if SERVER_PIN and not session.get('authenticated'): return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -154,8 +144,7 @@ def login_required(f):
 def background_zip_task(job_id, source_dir, temp_dir):
     try:
         base_name = os.path.basename(source_dir)
-        zip_filename = f"{base_name}.zip"
-        zip_path = os.path.join(temp_dir, zip_filename)
+        zip_path = os.path.join(temp_dir, f"{base_name}.zip")
         total_size = 0
         files_to_zip = []
         for root, dirs, files in os.walk(source_dir):
@@ -179,9 +168,7 @@ def background_zip_task(job_id, source_dir, temp_dir):
                             dest_file.write(chunk)
                             processed_size += len(chunk)
                             if total_size > 0: ZIP_JOBS[job_id]['progress'] = int((processed_size / total_size) * 100)
-        ZIP_JOBS[job_id]['progress'] = 100
-        ZIP_JOBS[job_id]['status'] = 'ready'
-        ZIP_JOBS[job_id]['filepath'] = zip_path
+        ZIP_JOBS[job_id].update({'progress': 100, 'status': 'ready', 'filepath': zip_path})
     except: ZIP_JOBS[job_id]['status'] = 'error'
 
 # --- ROUTES ---
@@ -201,23 +188,18 @@ def login():
 def index(subpath=""):
     global SHARED_DIR
     if not SHARED_DIR: return "Select folder in the app first."
-    
-    sort_by = request.args.get('sort', 'name')
     full_path = os.path.join(SHARED_DIR, subpath)
     if not os.path.exists(full_path): return abort(404)
-
     items_list = []
     try:
         for name in os.listdir(full_path):
             if name.startswith('.'): continue
             f_path = os.path.join(full_path, name)
             if name.lower().endswith(('.srt', '.vtt', '.json', '.jpg', '.png', '.zip', '.py', '.txt', '.exe')): continue 
-
             try:
                 stats = os.stat(f_path)
                 is_dir = os.path.isdir(f_path)
                 item_rel = os.path.join(subpath, name).replace("\\", "/")
-                
                 items_list.append({
                     "name": name, "is_dir": is_dir,
                     "url": f"/view/{item_rel}" if is_dir else f"/play/{item_rel}",
@@ -225,20 +207,16 @@ def index(subpath=""):
                     "size_raw": stats.st_size, "size": get_size_format(stats.st_size),
                     "time_raw": stats.st_mtime, "time": time.strftime('%d %b', time.localtime(stats.st_mtime))
                 })
-            except OSError: continue
-    except Exception: pass
-
-    # Count logic
+            except: continue
+    except: pass
+    
     total_folders = sum(1 for i in items_list if i['is_dir'])
     total_files = sum(1 for i in items_list if not i['is_dir'])
-
+    sort_by = request.args.get('sort', 'name')
     if sort_by == "date": items_list.sort(key=lambda x: x['time_raw'], reverse=True)
     elif sort_by == "size": items_list.sort(key=lambda x: x['size_raw'], reverse=True)
     else: items_list.sort(key=lambda x: x['name'].lower())
-
-    return render_template('index.html', items=items_list, current_path=subpath, 
-                           parent_path=os.path.dirname(subpath).replace("\\", "/"), sort_by=sort_by,
-                           count_folders=total_folders, count_files=total_files)
+    return render_template('index.html', items=items_list, current_path=subpath, parent_path=os.path.dirname(subpath).replace("\\", "/"), sort_by=sort_by, count_folders=total_folders, count_files=total_files)
 
 @app.route('/api/metadata')
 @login_required
@@ -246,16 +224,11 @@ def metadata_api():
     filename = request.args.get('file')
     subpath = request.args.get('path', '')
     is_dir = request.args.get('is_dir') == 'true'
-    
-    if is_dir: folder_location = os.path.join(SHARED_DIR, subpath)
-    else: folder_location = os.path.join(SHARED_DIR, subpath)
-
-    data = get_metadata(filename, folder_location, is_folder=is_dir)
-    return jsonify(data)
+    folder_location = os.path.join(SHARED_DIR, subpath)
+    return jsonify(get_metadata(filename, folder_location, is_folder=is_dir))
 
 @app.route('/metadata_img/<path:img_rel_path>')
-def serve_poster(img_rel_path):
-    return send_file(os.path.join(SHARED_DIR, img_rel_path))
+def serve_poster(img_rel_path): return send_file(os.path.join(SHARED_DIR, img_rel_path))
 
 @app.route('/play/<path:filepath>')
 @login_required
@@ -263,10 +236,8 @@ def play(filepath):
     filename = os.path.basename(filepath)
     directory = os.path.dirname(os.path.join(SHARED_DIR, filepath))
     encoded_filepath = urllib.parse.quote(filepath)
-    
-    vlc_protocol_link = f"vlc://{SERVER_URL}/download/{encoded_filepath}"
+    vlc_link = f"vlc://{SERVER_URL}/download/{encoded_filepath}"
     stream_url = f"{SERVER_URL}/download/{encoded_filepath}"
-
     base_name = os.path.splitext(filename)[0].lower()
     subtitles = []
     try:
@@ -276,173 +247,197 @@ def play(filepath):
                 rel_path = os.path.relpath(os.path.join(directory, f), SHARED_DIR).replace("\\", "/")
                 subtitles.append({"src": f"/download/{rel_path}", "label": label, "lang": "en"})
     except: pass
-
-    file_id = filename.replace(" ", "_").replace(".", "_")
-    return render_template('player.html', filepath=filepath, filename=filename, file_id=file_id, 
-                           subtitles=subtitles, vlc_link=vlc_protocol_link, stream_url=stream_url)
+    return render_template('player.html', filepath=filepath, filename=filename, file_id=filename.replace(" ","_"), subtitles=subtitles, vlc_link=vlc_link, stream_url=stream_url)
 
 @app.route('/download/<path:filename>')
 @login_required
 def download(filename):
     response = send_from_directory(SHARED_DIR, filename)
-    if filename.lower().endswith('.vtt'): response.headers['Content-Type'] = 'text/vtt'
-    elif filename.lower().endswith('.srt'): response.headers['Content-Type'] = 'text/plain' 
+    if filename.endswith('.vtt'): response.headers['Content-Type'] = 'text/vtt'
+    elif filename.endswith('.srt'): response.headers['Content-Type'] = 'text/plain' 
     return response
 
 @app.route('/api/start_zip/<path:subpath>')
 @login_required
 def start_zip(subpath):
-    target_dir = os.path.join(SHARED_DIR, subpath)
-    if not os.path.exists(target_dir): return jsonify({"error": "Path not found"}), 404
-    job_id = str(uuid.uuid4()); ZIP_JOBS[job_id] = {'progress': 0, 'status': 'processing'}
-    threading.Thread(target=background_zip_task, args=(job_id, target_dir, tempfile.gettempdir())).start()
-    return jsonify({"job_id": job_id})
+    target = os.path.join(SHARED_DIR, subpath)
+    if not os.path.exists(target): return jsonify({"error": "Path not found"}), 404
+    jid = str(uuid.uuid4()); ZIP_JOBS[jid] = {'progress': 0, 'status': 'processing'}
+    threading.Thread(target=background_zip_task, args=(jid, target, tempfile.gettempdir())).start()
+    return jsonify({"job_id": jid})
 
 @app.route('/api/zip_status/<job_id>')
-def zip_status(job_id): return jsonify(ZIP_JOBS.get(job_id) or {"error": "Job not found"})
+def zip_status(job_id): return jsonify(ZIP_JOBS.get(job_id) or {"error": "Not Found"})
 
 @app.route('/api/download_zip_result/<job_id>')
 @login_required
 def download_zip_result(job_id):
     job = ZIP_JOBS.get(job_id)
     if not job or job['status'] != 'ready': abort(404)
-    file_path = job['filepath']
+    fp = job['filepath']
     @after_this_request
     def cleanup(response):
-        try: os.remove(file_path); del ZIP_JOBS[job_id]
+        try: os.remove(fp); del ZIP_JOBS[job_id]
         except: pass
         return response
-    return send_file(file_path, as_attachment=True)
+    return send_file(fp, as_attachment=True)
 
-# --- GUI APP ---
-class MovieApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Movie Server Control")
-        self.root.geometry("500x750") # Taller for client list
-        self.root.resizable(False, False)
+
+# --- NEW MODERN UI CLASS ---
+ctk.set_appearance_mode("Dark")
+ctk.set_default_color_theme("blue")
+
+class ModernMovieApp(ctk.CTk):
+    def __init__(self):
+        super().__init__()
         
-        icon_path = os.path.join("static", "favicon.ico")
-        if os.path.exists(icon_path):
-            try: self.root.iconbitmap(icon_path) 
-            except: pass
-
-        header_frame = tk.Frame(root, bg="#111")
-        header_frame.pack(fill="x")
-        tk.Label(header_frame, text="🎬 Movie Server", font=("Segoe UI", 16, "bold"), bg="#111", fg="#e50914").pack(pady=15)
-
-        self.frame_controls = tk.Frame(root)
-        self.frame_controls.pack(pady=10)
-
-        # FOLDER SELECTION
-        tk.Label(self.frame_controls, text="Step 1: Select your Movies Folder", font=("Arial", 10)).pack()
-        self.btn_select = tk.Button(self.frame_controls, text="📁 Browse Folder", command=self.select_folder, width=20, bg="#ddd")
-        self.btn_select.pack(pady=5)
-        self.lbl_path = tk.Label(self.frame_controls, text="No folder selected", fg="gray", font=("Arial", 8), wraplength=400)
-        self.lbl_path.pack(pady=5)
-
-        # LOAD SAVED FOLDER AUTOMATICALLY
-        global SHARED_DIR
-        saved_path = load_settings()
-        if saved_path and os.path.exists(saved_path):
-            SHARED_DIR = saved_path
-            self.lbl_path.config(text=SHARED_DIR, fg="black")
-            
-        # PIN ENTRY
-        tk.Label(self.frame_controls, text="Step 2: Set PIN (Optional)", font=("Arial", 10)).pack(pady=(15, 5))
-        self.pin_entry = tk.Entry(self.frame_controls, show="*", justify="center", width=15, font=("Arial", 12))
-        self.pin_entry.pack()
-        tk.Label(self.frame_controls, text="(Leave empty for no password)", fg="gray", font=("Arial", 8)).pack()
+        self.title("Smart Media Server")
+        self.geometry("750x500")
         
-        # START BUTTON
-        state = "normal" if SHARED_DIR else "disabled"
-        self.btn_start = tk.Button(root, text="▶ START SERVER", state=state, command=self.run_s, bg="#28a745", fg="white", font=("Arial", 11, "bold"), width=20, height=2)
-        self.btn_start.pack(pady=10)
+        self.icon_path = os.path.join("static", "favicon.ico")
+        if os.path.exists(self.icon_path):
+            self.iconbitmap(self.icon_path)
 
-        # URL DISPLAY
-        self.frame_url = tk.Frame(root)
-        self.frame_url.pack(pady=5)
-        self.txt_display = tk.Text(self.frame_url, height=1, width=35, state="disabled", bg="#f4f4f4", font=("Consolas", 10))
-        self.txt_display.pack(side="left", padx=5)
-        self.btn_copy = tk.Button(self.frame_url, text="📋 Copy", state="disabled", command=self.copy_link, bg="#007bff", fg="white")
+        self.protocol('WM_DELETE_WINDOW', self.minimize_to_tray)
+
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        # --- SIDEBAR ---
+        self.sidebar = ctk.CTkFrame(self, width=220, corner_radius=0)
+        self.sidebar.grid(row=0, column=0, sticky="nsew")
+        
+        ctk.CTkLabel(self.sidebar, text="🎬 MEDIA SERVER", font=("Arial", 20, "bold"), text_color="#e50914").pack(pady=30)
+        
+        ctk.CTkLabel(self.sidebar, text="Source Folder:", anchor="w").pack(padx=20, pady=(10,0), anchor="w")
+        self.btn_select = ctk.CTkButton(self.sidebar, text="Browse Folder", command=self.select_folder, fg_color="#333", border_width=1, border_color="#555")
+        self.btn_select.pack(padx=20, pady=5)
+        self.lbl_path = ctk.CTkLabel(self.sidebar, text="None selected", text_color="gray", font=("Arial", 10), wraplength=180)
+        self.lbl_path.pack(padx=20)
+        
+        ctk.CTkLabel(self.sidebar, text="Security PIN:", anchor="w").pack(padx=20, pady=(20,0), anchor="w")
+        self.entry_pin = ctk.CTkEntry(self.sidebar, show="*", placeholder_text="Optional")
+        self.entry_pin.pack(padx=20, pady=5)
+
+        self.btn_start = ctk.CTkButton(self.sidebar, text="▶ Start Server", command=self.run_server, fg_color="#28a745", hover_color="#218838", state="disabled")
+        self.btn_start.pack(padx=20, pady=(30, 10))
+        
+        self.btn_stop = ctk.CTkButton(self.sidebar, text="⏹ Stop & Exit", command=self.stop_server, fg_color="#dc3545", hover_color="#c82333", state="disabled")
+        self.btn_stop.pack(padx=20, pady=5)
+
+        # --- MAIN AREA ---
+        self.main_area = ctk.CTkFrame(self, fg_color="transparent")
+        self.main_area.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+
+        self.status_frame = ctk.CTkFrame(self.main_area, fg_color="#222")
+        self.status_frame.pack(fill="x", pady=10)
+        self.lbl_status = ctk.CTkLabel(self.status_frame, text="Status: Offline", font=("Arial", 14), text_color="#888")
+        self.lbl_status.pack(pady=10)
+
+        self.url_frame = ctk.CTkFrame(self.main_area, fg_color="transparent")
+        self.url_frame.pack(fill="x", pady=10)
+        self.entry_url = ctk.CTkEntry(self.url_frame, placeholder_text="Waiting for server...", width=300)
+        self.entry_url.pack(side="left", padx=(0, 10))
+        self.btn_copy = ctk.CTkButton(self.url_frame, text="Copy Link", width=80, command=self.copy_link, state="disabled")
         self.btn_copy.pack(side="left")
 
-        # QR CODE
-        self.qr_label = tk.Label(root)
+        self.qr_label = ctk.CTkLabel(self.main_area, text="")
         self.qr_label.pack(pady=10)
-        
-        self.lbl_status = tk.Label(root, text="Waiting to start...", fg="#888", font=("Arial", 10, "italic"))
-        self.lbl_status.pack(pady=5)
 
-        # --- CLIENT MONITOR LIST ---
-        tk.Label(root, text="Connected Devices (Live Log)", font=("Arial", 9, "bold"), fg="#555").pack(pady=(15, 2))
-        self.client_list = tk.Listbox(root, height=4, width=50, bg="#f0f0f0", font=("Consolas", 9))
-        self.client_list.pack(pady=5)
-        
-        # Start the UI updater loop
-        self.update_client_monitor()
+        ctk.CTkLabel(self.main_area, text="Connected Devices (Live Log)", anchor="w", font=("Arial", 12, "bold")).pack(fill="x", pady=(10,5))
+        self.client_box = ctk.CTkTextbox(self.main_area, height=100, text_color="#ccc")
+        self.client_box.pack(fill="x")
+        self.client_box.configure(state="disabled")
 
-    def update_client_monitor(self):
-        # Refresh the listbox with connected clients
-        self.client_list.delete(0, tk.END)
-        if not CONNECTED_CLIENTS:
-            self.client_list.insert(tk.END, "No devices connected yet.")
-        else:
-            for ip, info in CONNECTED_CLIENTS.items():
-                entry = f"[{info['last_seen']}] {info['device']} ({ip})"
-                self.client_list.insert(tk.END, entry)
-        
-        # Check again in 2 seconds
-        self.root.after(2000, self.update_client_monitor)
+        saved_path = load_settings()
+        if saved_path and os.path.exists(saved_path):
+            global SHARED_DIR
+            SHARED_DIR = saved_path
+            self.lbl_path.configure(text=f"...{SHARED_DIR[-25:]}")
+            self.btn_start.configure(state="normal")
+            self.lbl_status.configure(text="Status: Ready to Start", text_color="#00aaff")
+
+        self.update_monitor()
 
     def select_folder(self):
         global SHARED_DIR
         path = filedialog.askdirectory()
         if path:
             SHARED_DIR = os.path.abspath(path)
-            self.lbl_path.config(text=SHARED_DIR, fg="black")
-            self.btn_start.config(state="normal")
-            self.lbl_status.config(text="Folder selected.", fg="#007bff")
-            # Save to config file
+            self.lbl_path.configure(text=f"...{SHARED_DIR[-25:]}")
             save_settings(SHARED_DIR)
+            self.btn_start.configure(state="normal")
+            self.lbl_status.configure(text="Status: Ready", text_color="#00aaff")
 
-    def copy_link(self):
-        self.root.clipboard_clear()
-        self.root.clipboard_append(SERVER_URL)
-        self.lbl_status.config(text="✅ Link copied to clipboard!", fg="#28a745")
-
-    def run_s(self):
+    def run_server(self):
         global SERVER_URL, SERVER_PIN
-        SERVER_PIN = self.pin_entry.get().strip()
+        SERVER_PIN = self.entry_pin.get().strip()
+        
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try: s.connect(("8.8.8.8", 80)); ip = s.getsockname()[0]
         except: ip = "127.0.0.1"
         finally: s.close()
-            
-        SERVER_URL = f"http://{ip}:{PORT}"
-        threading.Thread(target=lambda: app.run(host='0.0.0.0', port=PORT, use_reloader=False), daemon=True).start()
         
-        self.btn_start.config(text="SERVER RUNNING", state="disabled", bg="#555")
-        self.btn_select.config(state="disabled")
-        self.pin_entry.config(state="disabled")
-        self.btn_copy.config(state="normal")
-        self.txt_display.config(state="normal")
-        self.txt_display.delete("1.0", tk.END)
-        self.txt_display.insert("1.0", SERVER_URL)
-        self.txt_display.config(state="disabled")
+        SERVER_URL = f"http://{ip}:{PORT}"
+        
+        t = threading.Thread(target=lambda: app.run(host='0.0.0.0', port=PORT, use_reloader=False), daemon=True)
+        t.start()
+        
+        self.btn_start.configure(state="disabled", text="Running...")
+        self.btn_select.configure(state="disabled")
+        self.entry_pin.configure(state="disabled")
+        self.btn_stop.configure(state="normal")
+        self.btn_copy.configure(state="normal")
+        
+        self.entry_url.delete(0, "end")
+        self.entry_url.insert(0, SERVER_URL)
+        
+        self.lbl_status.configure(text="✅ Server is Live!", text_color="#28a745")
         
         qr = qrcode.QRCode(box_size=8, border=2)
         qr.add_data(SERVER_URL)
         qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white").resize((160, 160), Image.Resampling.LANCZOS)
-        self.tk_qr_image = ImageTk.PhotoImage(img)
-        self.qr_label.config(image=self.tk_qr_image)
-        
-        status_msg = "✅ Server Live!"
-        if SERVER_PIN: status_msg += f" (PIN: {SERVER_PIN})"
-        self.lbl_status.config(text=status_msg, fg="#28a745")
+        img = qr.make_image(fill_color="black", back_color="white").resize((150, 150), Image.Resampling.LANCZOS)
+        self.tk_qr_img = ctk.CTkImage(light_image=img, dark_image=img, size=(150,150))
+        self.qr_label.configure(image=self.tk_qr_img)
+
+    def stop_server(self):
+        self.quit_app()
+
+    def copy_link(self):
+        self.clipboard_clear()
+        self.clipboard_append(SERVER_URL)
+        self.lbl_status.configure(text="✅ Link Copied!", text_color="#28a745")
+
+    def update_monitor(self):
+        self.client_box.configure(state="normal")
+        self.client_box.delete("0.0", "end")
+        if not CONNECTED_CLIENTS:
+            self.client_box.insert("0.0", "Waiting for connections...")
+        else:
+            text = ""
+            for ip, info in CONNECTED_CLIENTS.items():
+                text += f"[{info['last_seen']}] {info['device']} ({ip})\n"
+            self.client_box.insert("0.0", text)
+        self.client_box.configure(state="disabled")
+        self.after(2000, self.update_monitor)
+
+    def minimize_to_tray(self):
+        self.withdraw()
+        image = Image.open(self.icon_path) if os.path.exists(self.icon_path) else Image.new('RGB', (64, 64), 'red')
+        menu = (item('Open', self.show_window), item('Stop & Exit', self.quit_app))
+        self.tray_icon = pystray.Icon("name", image, "Movie Server", menu)
+        self.tray_icon.run()
+
+    def show_window(self, icon, item):
+        self.tray_icon.stop()
+        self.after(0, self.deiconify)
+
+    def quit_app(self, icon=None, item=None):
+        if hasattr(self, 'tray_icon'): self.tray_icon.stop()
+        self.destroy()
+        os._exit(0)
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    MovieApp(root)
-    root.mainloop()
+    app_gui = ModernMovieApp()
+    app_gui.mainloop()
