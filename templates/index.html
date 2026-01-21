@@ -9,9 +9,9 @@
 <body>
     <div class="top-nav">
         <div class="nav-content">
-            <h1 onclick="window.location.href='/'">🎬 MEDIA LIBRARY</h1>
+            <h1 onclick="window.location.href='/'">🎬 MOVIE LIBRARY</h1>
             
-            <!-- NEW: STATS DISPLAY -->
+            <!-- STATS DISPLAY -->
             <div class="stats-pill">
                 <div>📁 <span>{{ count_folders }}</span></div>
                 <div style="width:1px; height:12px; background:#444;"></div>
@@ -25,10 +25,14 @@
                     <a href="/view/{{ parent_path }}" class="btn">⬅ Back</a>
                     <button data-path="{{ current_path | replace('\\', '/') }}" onclick="startZip(this.getAttribute('data-path'))" class="btn" style="border-color:#00aaff; color:#00aaff;">⬇ Zip</button>
                 {% endif %}
+                
+                <!-- NEW: MY LIST BUTTON -->
+                <button onclick="toggleMyListView()" id="btn-mylist" class="btn" style="border-color: #e50914; color: #e50914;">❤️ My List</button>
+
+                <div style="width:1px; height:20px; background:#333; margin:0 5px;"></div>
+                
                 <a href="?sort=name" class="btn">Name</a>
                 <a href="?sort=date" class="btn">Date</a>
-                
-                <!-- NEW: ABOUT BUTTON -->
                 <button onclick="openAbout()" class="btn" style="border-color: #666;">ℹ️</button>
             </div>
         </div>
@@ -37,9 +41,15 @@
     <div class="grid" id="movieGrid">
         {% for item in items %}
         <a href="{{ item.url }}" class="card movie-item" data-name="{{ item.name|lower }}" data-file="{{ item.name }}" data-id="{{ item.id }}">
+            
+            <!-- NEW: HEART BUTTON (onclick stops propagation so it doesn't play movie) -->
+            <button class="fav-btn" onclick="toggleFav(event, '{{ item.id }}')" title="Add to My List">♥</button>
+
             {% if item.is_dir %}<div class="folder-badge" style="display:block;">📁 Folder</div>{% endif %}
+            
             <img class="poster-img" style="display:none;">
             <div class="thumbnail default-thumb">{% if item.is_dir %}📁{% else %}🎞️{% endif %}</div>
+            
             <div class="details">
                 <span class="name">{{ item.name }}</span>
                 <div class="meta">
@@ -47,6 +57,7 @@
                     <span id="status-{{ item.id }}" class="watch-status"></span> 
                 </div>
             </div>
+            
             {% if not item.is_dir %}
             <div class="progress-bg" id="prog-bg-{{ item.id }}"><div class="progress-bar" id="prog-bar-{{ item.id }}"></div></div>
             {% endif %}
@@ -64,84 +75,117 @@
         </div>
     </div>
 
-    <!-- NEW: ABOUT DEVELOPER MODAL -->
+    <!-- ABOUT MODAL -->
     <div id="aboutModal" class="modal">
         <div class="modal-content dev-card">
             <span class="close" onclick="closeAbout()" style="float:right; cursor:pointer; font-size:24px;">&times;</span>
-            
-            <!--  <div class="dev-avatar">👨‍💻</div> -->
-            <img src="https://github.com/adnaanaeem.png" class="dev-avatar" alt="Adnaan Naeem">
-
-            
-            <!-- UPDATE YOUR DETAILS HERE -->
-            <h2 class="dev-name">Adnan Naeem</h2>
+            <img src="https://github.com/adnaanaeem.png" class="dev-avatar" alt="Dev">
+            <h2 class="dev-name">Adnaan Naeem</h2>
             <p class="dev-role">Software Developer | Python Enthusiast</p>
-
             <div class="social-links">
-                <!-- GitHub Link -->
-                <a href="https://github.com/adnaanaeem" target="_blank" class="social-btn gh" title="GitHub">
-                    <svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-                </a>
-                
-                <!-- LinkedIn Link -->
-                <a href="https://linkedin.com/in/adnaanaeem" target="_blank" class="social-btn li" title="LinkedIn">
-                    <svg viewBox="0 0 24 24"><path d="M4.98 3.5c0 1.381-1.11 2.5-2.48 2.5s-2.48-1.119-2.48-2.5c0-1.38 1.11-2.5 2.48-2.5s2.48 1.12 2.48 2.5zm.02 4.5h-5v16h5v-16zm7.982 0h-4.968v16h4.969v-8.399c0-4.67 6.029-5.052 6.029 0v8.399h4.988v-10.131c0-7.88-8.922-7.593-11.018-3.714v-2.155z"/></svg>
-                </a>
-
-                <!-- Repo Link -->
-                <a href="https://github.com/adnaanaeem/Smart-Movies-Server" target="_blank" class="social-btn rp" title="Project Repo">
-                    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41C17.92 5.77 20 8.65 20 12c0 2.08-.8 3.97-2.1 5.39z"/></svg>
-                </a>
+                <a href="https://github.com/adnaanaeem" target="_blank" class="social-btn gh"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a>
+                <a href="https://github.com/adnaanaeem/Smart-Movies-Server" target="_blank" class="social-btn rp"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41C17.92 5.77 20 8.65 20 12c0 2.08-.8 3.97-2.1 5.39z"/></svg></a>
             </div>
-
-            <div class="footer-note">
-                Feel free to contribute or fork this project.<br>
-                📧 <a href="mailto:adnaanaeem@gmail.com" style="color:#00aaff; text-decoration:none;">adnaanaeem@gmail.com</a>
-            </div>
+            <div class="footer-note">Feel free to contribute or fork this project.</div>
         </div>
     </div>
 
-    <!-- TMDB ATTRIBUTION -->
     <div style="text-align: center; font-size: 11px; color: #666; margin-top: 40px; padding-bottom: 20px;">
-        <img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" alt="TMDB Logo" style="width: 50px; opacity: 0.5; margin-bottom: 5px;"><br>
         This product uses the TMDB API but is not endorsed or certified by TMDB.
     </div>
 
     <script>
-        // ... (Keep your Metadata and History scripts) ...
+        let showingFavorites = false;
 
-        // ... (Keep filterMovies and startZip scripts) ...
-
-        // ABOUT MODAL LOGIC
-        function openAbout() { document.getElementById('aboutModal').style.display = "flex"; }
-        function closeAbout() { document.getElementById('aboutModal').style.display = "none"; }
-        
-        // Universal Close for Modals
-        window.onclick = function(event) {
-            let zipM = document.getElementById('zipModal');
-            let aboutM = document.getElementById('aboutModal');
-            if (event.target == zipM) zipM.style.display = "none";
-            if (event.target == aboutM) aboutM.style.display = "none";
+        // --- FAVORITES LOGIC ---
+        function getFavorites() {
+            return JSON.parse(localStorage.getItem('my_favorites')) || [];
         }
-        
-        // ... (Keep existing script content) ...
 
-        // 1. LAZY LOAD METADATA
+        function toggleFav(event, id) {
+            // Stop the click from bubbling up (so it doesn't open the movie)
+            event.preventDefault();
+            event.stopPropagation();
+            
+            let favs = getFavorites();
+            let btn = event.target;
+            
+            if (favs.includes(id)) {
+                // Remove
+                favs = favs.filter(item => item !== id);
+                btn.classList.remove('active');
+            } else {
+                // Add
+                favs.push(id);
+                btn.classList.add('active');
+            }
+            
+            localStorage.setItem('my_favorites', JSON.stringify(favs));
+            
+            // If we are currently viewing the list, refresh the view
+            if(showingFavorites) filterMovies(); 
+        }
+
+        function toggleMyListView() {
+            showingFavorites = !showingFavorites;
+            let btn = document.getElementById('btn-mylist');
+            
+            if (showingFavorites) {
+                btn.style.background = "#e50914";
+                btn.style.color = "white";
+                btn.innerText = "❌ Close List";
+            } else {
+                btn.style.background = "";
+                btn.style.color = "#e50914";
+                btn.innerText = "❤️ My List";
+            }
+            filterMovies();
+        }
+
+        // --- FILTERING (Search + Favorites) ---
+        function filterMovies() {
+            let input = document.getElementById('search').value.toLowerCase();
+            let items = document.getElementsByClassName('movie-item');
+            let favs = getFavorites();
+
+            for (let item of items) {
+                let name = item.getAttribute('data-name');
+                let id = item.getAttribute('data-id');
+                
+                let matchesSearch = name.includes(input);
+                let matchesFav = showingFavorites ? favs.includes(id) : true;
+                
+                if (matchesSearch && matchesFav) {
+                    item.style.display = "flex";
+                } else {
+                    item.style.display = "none";
+                }
+            }
+        }
+
+        // --- INITIALIZATION ---
         document.addEventListener("DOMContentLoaded", function() {
             let cards = document.getElementsByClassName('movie-item');
+            let favs = getFavorites();
             let currentSubpath = "{{ current_path | replace('\\', '/') }}";
-            
+
+            // 1. Mark Favorites on Load
             Array.from(cards).forEach(card => {
+                let id = card.getAttribute('data-id');
+                if (favs.includes(id)) {
+                    let btn = card.querySelector('.fav-btn');
+                    if(btn) btn.classList.add('active');
+                }
+                
+                // Metadata Fetch (Keep existing logic)
                 let filename = card.getAttribute('data-file');
                 let isDir = card.querySelector('.folder-badge') !== null; 
-                
                 fetch(`/api/metadata?file=${encodeURIComponent(filename)}&path=${encodeURIComponent(currentSubpath)}&is_dir=${isDir}`)
                 .then(res => res.json())
                 .then(data => {
                     if (data.poster) {
-                        let img = card.querySelector('.poster-img');
-                        img.src = data.poster;
-                        img.style.display = "block";
+                        card.querySelector('.poster-img').src = data.poster;
+                        card.querySelector('.poster-img').style.display = "block";
                         card.querySelector('.default-thumb').style.display = "none";
                         card.querySelector('.name').innerText = data.title;
                         if(data.year) card.querySelector('.year-tag').innerText = data.year;
@@ -149,7 +193,7 @@
                 });
             });
 
-            // Watch History logic
+            // History Logic (Keep existing logic)
             for (let card of cards) {
                 if(card.querySelector('.folder-badge')) continue;
                 let fileId = card.getAttribute('data-id');
@@ -166,28 +210,19 @@
                             bar.style.backgroundColor = '#28a745';
                             document.getElementById('status-' + fileId).innerText = "✅ Watched";
                         } else {
-                            let minutesLeft = Math.round((duration - time) / 60);
-                            document.getElementById('status-' + fileId).innerText = "⏳ " + minutesLeft + "m left";
+                            let m = Math.round((duration - time) / 60);
+                            document.getElementById('status-' + fileId).innerText = "⏳ " + m + "m left";
                         }
                     }
                 }
             }
         });
 
-        function filterMovies() {
-            let input = document.getElementById('search').value.toLowerCase();
-            let items = document.getElementsByClassName('movie-item');
-            for (let item of items) {
-                item.style.display = item.getAttribute('data-name').includes(input) ? "flex" : "none";
-            }
-        }
-        
+        // --- ZIP LOGIC (Keep existing logic) ---
         let zipInterval;
         function startZip(path) {
             document.getElementById('zipModal').style.display = 'flex';
-            fetch(`/api/start_zip/${encodeURIComponent(path)}`).then(r => r.json()).then(d => {
-                if(d.job_id) trackZip(d.job_id);
-            });
+            fetch(`/api/start_zip/${encodeURIComponent(path)}`).then(r => r.json()).then(d => { if(d.job_id) trackZip(d.job_id); });
         }
         function trackZip(jobId) {
             zipInterval = setInterval(() => {
@@ -195,14 +230,18 @@
                     document.getElementById('zipBar').style.width = d.progress + "%";
                     document.getElementById('zipStatus').innerText = d.progress + "%";
                     if(d.status === 'ready') {
-                        clearInterval(zipInterval);
-                        window.location.href = `/api/download_zip_result/${jobId}`;
-                        setTimeout(closeZipModal, 2000);
+                        clearInterval(zipInterval); window.location.href = `/api/download_zip_result/${jobId}`; setTimeout(closeZipModal, 2000);
                     }
                 });
             }, 1000);
         }
         function closeZipModal() { document.getElementById('zipModal').style.display = 'none'; clearInterval(zipInterval); }
+        function openAbout() { document.getElementById('aboutModal').style.display = "flex"; }
+        function closeAbout() { document.getElementById('aboutModal').style.display = "none"; }
+        window.onclick = function(e) { 
+            if(e.target == document.getElementById('zipModal')) closeZipModal();
+            if(e.target == document.getElementById('aboutModal')) closeAbout();
+        }
     </script>
 </body>
 </html>
