@@ -37,16 +37,17 @@ input#search:focus { border-color: var(--primary); }
     bottom: 0;
     left: 0;
     width: 100%;
-    height: 4px;
-    background: rgba(255,255,255,0.3);
-    display: none; /* Hidden unless watched */
+    height: 8px; /* Made it slightly thicker */
+    background: rgba(0,0,0,0.6);
+    z-index: 100; /* FORCE ON TOP */
+    display: none; 
 }
 
 .progress-bar {
     height: 100%;
-    background: #e50914; /* Netflix Red */
+    background: #e50914; 
     width: 0%;
-    transition: width 0.5s ease;
+    box-shadow: 0 0 10px rgba(229, 9, 20, 0.8);
 }
 /* POSTER CARD STYLE UPDATE */
 .card {

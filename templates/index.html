@@ -94,154 +94,150 @@
         This product uses the TMDB API but is not endorsed or certified by TMDB.
     </div>
 
-    <script>
-        let showingFavorites = false;
+<script>
+    let showingFavorites = false;
 
-        // --- FAVORITES LOGIC ---
-        function getFavorites() {
-            return JSON.parse(localStorage.getItem('my_favorites')) || [];
+    // --- FAVORITES LOGIC ---
+    function getFavorites() {
+        return JSON.parse(localStorage.getItem('my_favorites')) || [];
+    }
+
+    function toggleFav(event, id) {
+        event.preventDefault(); event.stopPropagation();
+        let favs = getFavorites();
+        let btn = event.target;
+        if (favs.includes(id)) {
+            favs = favs.filter(item => item !== id);
+            btn.classList.remove('active');
+        } else {
+            favs.push(id);
+            btn.classList.add('active');
         }
+        localStorage.setItem('my_favorites', JSON.stringify(favs));
+        if(showingFavorites) filterMovies(); 
+    }
 
-        function toggleFav(event, id) {
-            // Stop the click from bubbling up (so it doesn't open the movie)
-            event.preventDefault();
-            event.stopPropagation();
-            
-            let favs = getFavorites();
-            let btn = event.target;
-            
+    function toggleMyListView() {
+        showingFavorites = !showingFavorites;
+        let btn = document.getElementById('btn-mylist');
+        if (showingFavorites) {
+            btn.style.background = "#e50914"; btn.style.color = "white"; btn.innerText = "❌ Close List";
+        } else {
+            btn.style.background = ""; btn.style.color = "#e50914"; btn.innerText = "❤️ My List";
+        }
+        filterMovies();
+    }
+
+    function filterMovies() {
+        let input = document.getElementById('search').value.toLowerCase();
+        let items = document.getElementsByClassName('movie-item');
+        let favs = getFavorites();
+        for (let item of items) {
+            let name = item.getAttribute('data-name');
+            let id = item.getAttribute('data-id');
+            let matchesSearch = name.includes(input);
+            let matchesFav = showingFavorites ? favs.includes(id) : true;
+            item.style.display = (matchesSearch && matchesFav) ? "flex" : "none";
+        }
+    }
+
+    // --- INITIALIZATION ---
+    document.addEventListener("DOMContentLoaded", function() {
+        let cards = document.getElementsByClassName('movie-item');
+        let favs = getFavorites();
+        let currentSubpath = "{{ current_path | replace('\\', '/') }}";
+
+        console.log("--- DEBUGGING PROGRESS BARS ---");
+
+        Array.from(cards).forEach(card => {
+            let id = card.getAttribute('data-id');
+
+            // 1. Favorites
             if (favs.includes(id)) {
-                // Remove
-                favs = favs.filter(item => item !== id);
-                btn.classList.remove('active');
-            } else {
-                // Add
-                favs.push(id);
-                btn.classList.add('active');
+                let btn = card.querySelector('.fav-btn');
+                if(btn) btn.classList.add('active');
             }
             
-            localStorage.setItem('my_favorites', JSON.stringify(favs));
+            // 2. Metadata Fetch
+            let filename = card.getAttribute('data-file');
+            let isDir = card.querySelector('.folder-badge') !== null; 
             
-            // If we are currently viewing the list, refresh the view
-            if(showingFavorites) filterMovies(); 
-        }
+            if(!isDir) {
+                // --- HISTORY CHECK ---
+                let time = localStorage.getItem(id);
+                let duration = localStorage.getItem(id + "_total");
 
-        function toggleMyListView() {
-            showingFavorites = !showingFavorites;
-            let btn = document.getElementById('btn-mylist');
-            
-            if (showingFavorites) {
-                btn.style.background = "#e50914";
-                btn.style.color = "white";
-                btn.innerText = "❌ Close List";
-            } else {
-                btn.style.background = "";
-                btn.style.color = "#e50914";
-                btn.innerText = "❤️ My List";
-            }
-            filterMovies();
-        }
-
-        // --- FILTERING (Search + Favorites) ---
-        function filterMovies() {
-            let input = document.getElementById('search').value.toLowerCase();
-            let items = document.getElementsByClassName('movie-item');
-            let favs = getFavorites();
-
-            for (let item of items) {
-                let name = item.getAttribute('data-name');
-                let id = item.getAttribute('data-id');
-                
-                let matchesSearch = name.includes(input);
-                let matchesFav = showingFavorites ? favs.includes(id) : true;
-                
-                if (matchesSearch && matchesFav) {
-                    item.style.display = "flex";
+                // DEBUG LOGGING
+                if (time) {
+                    console.log(`✅ MATCH FOUND for ID: ${id}. Time: ${time}`);
                 } else {
-                    item.style.display = "none";
-                }
-            }
-        }
-
-        // --- INITIALIZATION ---
-        document.addEventListener("DOMContentLoaded", function() {
-            let cards = document.getElementsByClassName('movie-item');
-            let favs = getFavorites();
-            let currentSubpath = "{{ current_path | replace('\\', '/') }}";
-
-            // 1. Mark Favorites on Load
-            Array.from(cards).forEach(card => {
-                let id = card.getAttribute('data-id');
-                if (favs.includes(id)) {
-                    let btn = card.querySelector('.fav-btn');
-                    if(btn) btn.classList.add('active');
-                }
-                
-                // Metadata Fetch (Keep existing logic)
-                let filename = card.getAttribute('data-file');
-                let isDir = card.querySelector('.folder-badge') !== null; 
-                fetch(`/api/metadata?file=${encodeURIComponent(filename)}&path=${encodeURIComponent(currentSubpath)}&is_dir=${isDir}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data.poster) {
-                        card.querySelector('.poster-img').src = data.poster;
-                        card.querySelector('.poster-img').style.display = "block";
-                        card.querySelector('.default-thumb').style.display = "none";
-                        card.querySelector('.name').innerText = data.title;
-                        if(data.year) card.querySelector('.year-tag').innerText = data.year;
+                    // Check if a similar ID exists (Mismatch Detector)
+                    for(let i=0; i<localStorage.length; i++) {
+                        let key = localStorage.key(i);
+                        if(key.includes(filename.substring(0,5)) && key !== "my_favorites") {
+                            console.log(`❌ MISMATCH! HTML expects '${id}' but LocalStorage has '${key}'`);
+                        }
                     }
-                });
-            });
+                }
 
-            // History Logic (Keep existing logic)
-            for (let card of cards) {
-                if(card.querySelector('.folder-badge')) continue;
-                let fileId = card.getAttribute('data-id');
-                let time = localStorage.getItem(fileId);
-                let duration = localStorage.getItem(fileId + "_total");
                 if (time && duration > 0) {
                     let percent = (time / duration) * 100;
-                    let bg = document.getElementById('prog-bg-' + fileId);
-                    let bar = document.getElementById('prog-bar-' + fileId);
-                    if (bg) {
+                    let bg = document.getElementById('prog-bg-' + id);
+                    let bar = document.getElementById('prog-bar-' + id);
+                    let status = document.getElementById('status-' + id);
+                    
+                    if (bg && bar) {
                         bg.style.display = 'block';
                         bar.style.width = percent + '%';
                         if (percent > 90) {
                             bar.style.backgroundColor = '#28a745';
-                            document.getElementById('status-' + fileId).innerText = "✅ Watched";
+                            if(status) status.innerText = "✅ Watched";
                         } else {
                             let m = Math.round((duration - time) / 60);
-                            document.getElementById('status-' + fileId).innerText = "⏳ " + m + "m left";
+                            if(status) status.innerText = "⏳ " + m + "m left";
                         }
                     }
                 }
             }
-        });
 
-        // --- ZIP LOGIC (Keep existing logic) ---
-        let zipInterval;
-        function startZip(path) {
-            document.getElementById('zipModal').style.display = 'flex';
-            fetch(`/api/start_zip/${encodeURIComponent(path)}`).then(r => r.json()).then(d => { if(d.job_id) trackZip(d.job_id); });
-        }
-        function trackZip(jobId) {
-            zipInterval = setInterval(() => {
-                fetch(`/api/zip_status/${jobId}?t=`+new Date().getTime()).then(r => r.json()).then(d => {
-                    document.getElementById('zipBar').style.width = d.progress + "%";
-                    document.getElementById('zipStatus').innerText = d.progress + "%";
-                    if(d.status === 'ready') {
-                        clearInterval(zipInterval); window.location.href = `/api/download_zip_result/${jobId}`; setTimeout(closeZipModal, 2000);
-                    }
-                });
-            }, 1000);
-        }
-        function closeZipModal() { document.getElementById('zipModal').style.display = 'none'; clearInterval(zipInterval); }
-        function openAbout() { document.getElementById('aboutModal').style.display = "flex"; }
-        function closeAbout() { document.getElementById('aboutModal').style.display = "none"; }
-        window.onclick = function(e) { 
-            if(e.target == document.getElementById('zipModal')) closeZipModal();
-            if(e.target == document.getElementById('aboutModal')) closeAbout();
-        }
-    </script>
+            fetch(`/api/metadata?file=${encodeURIComponent(filename)}&path=${encodeURIComponent(currentSubpath)}&is_dir=${isDir}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.poster) {
+                    card.querySelector('.poster-img').src = data.poster;
+                    card.querySelector('.poster-img').style.display = "block";
+                    card.querySelector('.default-thumb').style.display = "none";
+                    card.querySelector('.name').innerText = data.title;
+                    if(data.year) card.querySelector('.year-tag').innerText = data.year;
+                }
+            });
+        });
+    });
+
+    // --- ZIP LOGIC ---
+    let zipInterval;
+    function startZip(path) {
+        document.getElementById('zipModal').style.display = 'flex';
+        fetch(`/api/start_zip/${encodeURIComponent(path)}`).then(r => r.json()).then(d => { if(d.job_id) trackZip(d.job_id); });
+    }
+    function trackZip(jobId) {
+        zipInterval = setInterval(() => {
+            fetch(`/api/zip_status/${jobId}?t=`+new Date().getTime()).then(r => r.json()).then(d => {
+                document.getElementById('zipBar').style.width = d.progress + "%";
+                document.getElementById('zipStatus').innerText = d.progress + "%";
+                if(d.status === 'ready') {
+                    clearInterval(zipInterval); window.location.href = `/api/download_zip_result/${jobId}`; setTimeout(closeZipModal, 2000);
+                }
+            });
+        }, 1000);
+    }
+    function closeZipModal() { document.getElementById('zipModal').style.display = 'none'; clearInterval(zipInterval); }
+    function openAbout() { document.getElementById('aboutModal').style.display = "flex"; }
+    function closeAbout() { document.getElementById('aboutModal').style.display = "none"; }
+    window.onclick = function(e) { 
+        if(e.target == document.getElementById('zipModal')) closeZipModal();
+        if(e.target == document.getElementById('aboutModal')) closeAbout();
+    }
+</script>
 </body>
 </html>

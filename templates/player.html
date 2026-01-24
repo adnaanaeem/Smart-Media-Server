@@ -220,90 +220,91 @@
     </div>
 
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
-    <script>
-        const player = new Plyr('#player', {
-            controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
-            settings: ['speed', 'quality'],
-            speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-            keyboard: { focused: true, global: true },
-            seekTime: 10,
-        });
+<script>
+    // 1. Initialize Player
+    const player = new Plyr('#player', {
+        controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
+        settings: ['speed', 'quality'],
+        keyboard: { focused: true, global: true },
+        seekTime: 10,
+        // Disable autoplay initially to prevent the "Reset to 0" race condition
+        autoplay: false 
+    });
 
-        const fileId = "{{ file_id }}";
-        const streamUrl = "{{ stream_url }}";
-        const vlcLink = "{{ vlc_link }}";
+    const fileId = "{{ file_id }}";
+    const streamUrl = "{{ stream_url }}";
+    const vlcLink = "{{ vlc_link }}";
+    let hasResumed = false;
 
-        // --- VOLUME OSD LOGIC ---
-        let osdTimeout;
-        const osd = document.getElementById('volume-osd');
-
-        player.on('volumechange', event => {
-            if(player.muted) {
-                osd.innerText = "🔇 Muted";
-            } else {
-                const vol = Math.round(player.volume * 100);
-                let icon = vol > 50 ? "🔊" : vol > 0 ? "🔉" : "🔇";
-                osd.innerText = `${icon} ${vol}%`;
-            }
-            
-            // Show OSD
-            osd.style.display = "block";
-            osd.style.opacity = "1";
-            
-            // Hide after 1.5 seconds
-            clearTimeout(osdTimeout);
-            osdTimeout = setTimeout(() => {
-                osd.style.opacity = "0";
-                setTimeout(() => { osd.style.display = "none"; }, 300);
-            }, 1000);
-        });
-
-        // --- RESUME LOGIC ---
+    // --- ROBUST RESUME LOGIC ---
+    player.on('ready', event => {
         const savedTime = localStorage.getItem(fileId);
-        player.on('ready', event => {
-            if (savedTime && savedTime > 5) {
+        
+        if (savedTime && parseFloat(savedTime) > 10) {
+            // Show toast immediately
+            const msg = document.getElementById('resume-msg');
+            msg.style.display = 'block';
+            msg.innerText = "🔄 Resuming from " + formatTime(savedTime);
+            
+            // Force the seek after a tiny delay to ensure browser engine is ready
+            setTimeout(() => {
                 player.currentTime = parseFloat(savedTime);
-                document.getElementById('resume-msg').style.display = 'block';
-                setTimeout(() => { document.getElementById('resume-msg').style.display = 'none'; }, 3000);
-            }
-            player.elements.container.focus();
-        });
+                player.play(); // Start playing AFTER seeking
+                
+                // Hide toast
+                setTimeout(() => { msg.style.display = 'none'; }, 3000);
+            }, 200); 
+        } else {
+            // No history? Just play normally
+            player.play();
+        }
+    });
 
-        player.on('timeupdate', event => {
+    // --- SAVE PROGRESS (Throttled) ---
+    // We only save every 2 seconds to avoid spamming LocalStorage
+    let lastSave = 0;
+    player.on('timeupdate', event => {
+        const now = Date.now();
+        if (now - lastSave > 2000 && player.currentTime > 5) {
             localStorage.setItem(fileId, player.currentTime);
             localStorage.setItem(fileId + "_total", player.duration);
-        });
-        player.on('ended', event => { localStorage.removeItem(fileId); });
-
-        // --- UTILS ---
-        function launchVlc() {
-            fallbackCopy(streamUrl, true);
-            window.location.href = vlcLink;
-            setTimeout(() => { alert("🚀 Launching VLC...\n\nIf it didn't open:\n1. Open VLC.\n2. Ctrl + N.\n3. Ctrl + V."); }, 500);
+            lastSave = now;
         }
+    });
 
-        function copyStreamLink() {
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(streamUrl).then(() => { alert("Stream link copied!"); }).catch(() => { fallbackCopy(streamUrl, false); });
-            } else { fallbackCopy(streamUrl, false); }
+    // Clear progress when movie ends
+    player.on('ended', event => { localStorage.removeItem(fileId); });
+
+
+    // --- VOLUME OSD ---
+    const osd = document.getElementById('volume-osd');
+    let osdTimeout;
+    player.on('volumechange', event => {
+        if(player.muted) { osd.innerText = "🔇 Muted"; } 
+        else {
+            const vol = Math.round(player.volume * 100);
+            osd.innerText = (vol > 50 ? "🔊" : vol > 0 ? "🔉" : "🔇") + " " + vol + "%";
         }
+        osd.style.display = "block"; osd.style.opacity = "1";
+        clearTimeout(osdTimeout);
+        osdTimeout = setTimeout(() => { osd.style.opacity = "0"; setTimeout(() => osd.style.display = "none", 300); }, 1000);
+    });
 
-        function fallbackCopy(text, silent) {
-            var textArea = document.createElement("textarea");
-            textArea.value = text;
-            textArea.style.position = "fixed";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            try {
-                document.execCommand('copy');
-                if (!silent) alert("Stream link copied!");
-            } catch (err) { if (!silent) prompt("Copy:", text); }
-            document.body.removeChild(textArea);
-        }
+    // --- UTILS ---
+    function formatTime(seconds) {
+        const date = new Date(null);
+        date.setSeconds(seconds);
+        return date.toISOString().substr(11, 8).replace(/^00:/, '');
+    }
 
-        function openShortcuts() { document.getElementById('shortcutsModal').style.display = "flex"; }
-        function closeShortcuts(e) { if(e.target.id === 'shortcutsModal') document.getElementById('shortcutsModal').style.display = "none"; }
-    </script>
+    function launchVlc() { window.location.href = vlcLink; }
+    
+    function copyStreamLink() {
+        navigator.clipboard.writeText(streamUrl).then(() => alert("Copied!")).catch(() => prompt("Copy:", streamUrl));
+    }
+    
+    function openShortcuts() { document.getElementById('shortcutsModal').style.display = "flex"; }
+    function closeShortcuts(e) { if(e.target.id === 'shortcutsModal') document.getElementById('shortcutsModal').style.display = "none"; }
+</script>
 </body>
 </html>

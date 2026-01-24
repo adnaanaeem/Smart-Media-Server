@@ -11,6 +11,7 @@ import re
 import json
 import requests
 import sys
+import re
 from functools import wraps
 from datetime import datetime
 from PIL import Image, ImageTk
@@ -224,7 +225,7 @@ def index(subpath=""):
                 items_list.append({
                     "name": name, "is_dir": is_dir,
                     "url": f"/view/{item_rel}" if is_dir else f"/play/{item_rel}",
-                    "id": name.replace(" ", "_").replace(".", "_"), 
+                    "id": re.sub(r'\W+', '', name),
                     "size_raw": stats.st_size, "size": get_size_format(stats.st_size),
                     "time_raw": stats.st_mtime, "time": time.strftime('%d %b', time.localtime(stats.st_mtime))
                 })
@@ -256,6 +257,9 @@ def serve_poster(img_rel_path): return send_file(os.path.join(SHARED_DIR, img_re
 @login_required
 def play(filepath):
     filename = os.path.basename(filepath)
+    # 1. GENERATE STRICT ID (Only Alphanumeric)
+    safe_id = re.sub(r'\W+', '', filename)
+    
     directory = os.path.dirname(os.path.join(SHARED_DIR, filepath))
     encoded_filepath = urllib.parse.quote(filepath)
     vlc_link = f"vlc://{SERVER_URL}/download/{encoded_filepath}"
@@ -283,10 +287,53 @@ def play(filepath):
                 subtitles.append({"src": f"/download/{rel_path}", "label": label, "lang": "en"})
     except: pass
     
+    # REMOVED THE OVERWRITING LINE HERE
+
     return render_template('player.html', 
                            filepath=filepath, 
                            filename=filename, 
-                           file_id=filename.replace(" ","_"), 
+                           file_id=safe_id, # Now using the correct Regex ID
+                           subtitles=subtitles, 
+                           vlc_link=vlc_link, 
+                           stream_url=stream_url, 
+                           meta=meta, 
+                           file_size=fsize, 
+                           quality=quality, 
+                           container=ext)
+    filename = os.path.basename(filepath)
+    safe_id = re.sub(r'\W+', '', filename)
+    directory = os.path.dirname(os.path.join(SHARED_DIR, filepath))
+    encoded_filepath = urllib.parse.quote(filepath)
+    vlc_link = f"vlc://{SERVER_URL}/download/{encoded_filepath}"
+    stream_url = f"{SERVER_URL}/download/{encoded_filepath}"
+    
+    # Get Metadata
+    meta = get_metadata(filename, directory, is_folder=False)
+    
+    # File Stats
+    try:
+        full_path = os.path.join(SHARED_DIR, filepath)
+        fsize = f"{os.path.getsize(full_path) / (1024 * 1024):.2f} MB"
+    except: fsize = "Unknown"
+    
+    quality = "1080p" if "1080" in filename else "720p" if "720" in filename else "4K" if "2160" in filename else "SD"
+    ext = os.path.splitext(filename)[1].replace('.', '').upper()
+
+    subtitles = []
+    base_name = os.path.splitext(filename)[0].lower()
+    try:
+        for f in os.listdir(directory):
+            if f.lower().startswith(base_name) and f.lower().endswith(('.srt', '.vtt')):
+                label = "English" if "eng" in f.lower() else "Subtitle"
+                rel_path = os.path.relpath(os.path.join(directory, f), SHARED_DIR).replace("\\", "/")
+                subtitles.append({"src": f"/download/{rel_path}", "label": label, "lang": "en"})
+    except: pass
+    
+    safe_id = filename.replace(" ", "").replace(".", "")
+    return render_template('player.html', 
+                           filepath=filepath, 
+                           filename=filename, 
+                           file_id=safe_id,
                            subtitles=subtitles, 
                            vlc_link=vlc_link, 
                            stream_url=stream_url, 
