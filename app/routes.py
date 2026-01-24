@@ -165,3 +165,46 @@ def download_zip_result(job_id):
         except: pass
         return response
     return send_file(fp, as_attachment=True)
+
+@app.route('/my-list')
+@login_required
+def my_list():
+    # Get the list of favorite IDs from the URL query parameter
+    favorite_ids_str = request.args.get('ids', '')
+    if not favorite_ids_str:
+        return render_template('my_list.html', items=[])
+
+    favorite_ids = favorite_ids_str.split(',')
+    
+    favorited_items = []
+    
+    # Walk through the entire shared directory to find matching files
+    for root, dirs, files in os.walk(ServerConfig.SHARED_DIR):
+        # Skip hidden folders
+        if '.meta' in root:
+            continue
+            
+        for name in files:
+            # Generate an ID for the file in the same way the index does
+            safe_id = re.sub(r'\W+', '', name)
+            
+            if safe_id in favorite_ids:
+                # We found a match! Now get its details.
+                full_path = os.path.join(root, name)
+                
+                # Get relative path for URL generation
+                rel_path = os.path.relpath(full_path, ServerConfig.SHARED_DIR).replace("\\", "/")
+                
+                # Fetch metadata to get poster, title, etc.
+                meta = get_metadata(name, root)
+
+                favorited_items.append({
+                    "name": name,
+                    "id": safe_id,
+                    "url": f"/play/{rel_path}",
+                    "title": meta.get('title', name),
+                    "year": meta.get('year', ''),
+                    "poster": meta.get('poster', None)
+                })
+
+    return render_template('my_list.html', items=favorited_items)

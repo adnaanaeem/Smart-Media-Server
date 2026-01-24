@@ -55,8 +55,8 @@
                 {% endif %}
                 
                 <!-- NEW: MY LIST BUTTON -->
-                <button onclick="toggleMyListView()" id="btn-mylist" class="btn" style="border-color: #e50914; color: #e50914;">❤️ My List</button>
-
+                <button onclick="showMyListPage()" id="btn-mylist" class="btn" style="border-color: #e50914; color: #e50914;">❤️ My List</button>
+                
                 <div style="width:1px; height:20px; background:#333; margin:0 5px;"></div>
                 
                 <a href="?sort=name" class="btn">Name</a>
@@ -145,15 +145,39 @@
         if(showingFavorites) filterMovies(); 
     }
 
-    function toggleMyListView() {
-        showingFavorites = !showingFavorites;
-        let btn = document.getElementById('btn-mylist');
-        if (showingFavorites) {
-            btn.style.background = "#e50914"; btn.style.color = "white"; btn.innerText = "❌ Close List";
-        } else {
-            btn.style.background = ""; btn.style.color = "#e50914"; btn.innerText = "❤️ My List";
+// --- FAVORITES LOGIC (UPDATED) ---
+    function getFavorites() {
+        return JSON.parse(localStorage.getItem('my_favorites')) || [];
+    }
+
+    // This function now redirects to the new server route
+    function showMyListPage() {
+        const favs = getFavorites();
+        if (favs.length === 0) {
+            alert("Your list is empty! Click the heart on a movie to add it.");
+            return;
         }
-        filterMovies();
+        // Redirect to the new page, passing IDs as a comma-separated string
+        window.location.href = '/my-list?ids=' + favs.join(',');
+    }
+
+    function toggleFav(event, id) {
+        // Stop the click from bubbling up (so it doesn't open the movie)
+        event.preventDefault();
+        event.stopPropagation();
+        
+        let favs = getFavorites();
+        let btn = event.target;
+        
+        if (favs.includes(id)) {
+            favs = favs.filter(item => item !== id);
+            btn.classList.remove('active');
+        } else {
+            favs.push(id);
+            btn.classList.add('active');
+        }
+        
+        localStorage.setItem('my_favorites', JSON.stringify(favs));
     }
 
     function filterMovies() {

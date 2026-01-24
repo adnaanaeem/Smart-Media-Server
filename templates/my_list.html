@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My List</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <style>
+        .page-header {
+            max-width: 1200px;
+            margin: 0 auto 20px auto;
+            padding: 0 20px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 20px;
+        }
+        .page-header h1 {
+            color: #e50914;
+            font-size: 32px;
+        }
+        .page-header a {
+            color: #ccc;
+            text-decoration: none;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="page-header">
+        <h1>❤️ My List</h1>
+        <a href="/">⬅ Back to Library</a>
+    </div>
+
+    <div class="grid" id="movieGrid">
+        {% for item in items %}
+        <a href="{{ item.url }}" class="card movie-item" data-name="{{ item.name|lower }}" data-file="{{ item.name }}" data-id="{{ item.id }}">
+            <img class="poster-img" src="{{ item.poster if item.poster else '' }}" {% if item.poster %}style="display: block;"{% else %}style="display: none;"{% endif %}>
+            <div class="thumbnail default-thumb" {% if item.poster %}style="display: none;"{% else %}style="display: flex;"{% endif %}>🎞️</div>
+            
+            <div class="details">
+                <span class="name">{{ item.title }}</span>
+                <div class="meta"><span class="year-tag">{{ item.year }}</span></div>
+            </div>
+        </a>
+        {% else %}
+        <p style="text-align: center; color: #888; grid-column: 1 / -1;">You haven't added any movies to your list yet. Click the heart icon on any movie poster.</p>
+        {% endfor %}
+    </div>
+
+    <div style="text-align: center; font-size: 11px; color: #666; margin-top: 40px; padding-bottom: 20px;">
+        This product uses the TMDB API but is not endorsed or certified by TMDB.
+    </div>
+</body>
+</html>

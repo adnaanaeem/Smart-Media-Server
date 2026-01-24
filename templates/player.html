@@ -11,33 +11,20 @@
     <style>
         body { background: #0f0f0f; color: white; margin: 0; font-family: 'Segoe UI', sans-serif; overflow-x: hidden; }
         
-        /* 1. TOP SPACING BAR (Fixes "Cramped" feeling) */
+        /* 1. TOP SPACING BAR */
         .top-header {
-            height: 50px;
-            width: 100%;
-            background: #0f0f0f;
-            display: flex;
-            align-items: center;
-            padding-left: 20px;
-            font-size: 14px;
-            color: #555;
-            border-bottom: 1px solid #222;
+            height: 50px; width: 100%; background: #0f0f0f;
+            display: flex; align-items: center; padding-left: 20px;
+            font-size: 14px; color: #555; border-bottom: 1px solid #222;
         }
 
         /* PLAYER CONTAINER */
         .player-wrapper { 
-            width: 100%; 
-            height: 65vh; 
-            background: black; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            position: relative;
-            box-shadow: 0 10px 50px rgba(0,0,0,0.8);
-            z-index: 10;
+            width: 100%; height: 65vh; background: black; 
+            display: flex; align-items: center; justify-content: center; 
+            position: relative; box-shadow: 0 10px 50px rgba(0,0,0,0.8); z-index: 10;
         }
         
-        /* CUSTOM PLYR COLORS */
         :root { --plyr-color-main: #e50914; }
         .plyr { width: 100%; height: 100%; }
         
@@ -54,24 +41,25 @@
         }
         .back-btn:hover { background: white; color: black; transform: scale(1.1); }
 
-        /* 2. VOLUME OSD (Netflix Style Center Display) */
+        /* VOLUME OSD */
         #volume-osd {
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.7);
-            padding: 20px 30px;
-            border-radius: 10px;
-            color: white;
-            font-size: 24px;
-            font-weight: bold;
-            display: none; /* Hidden by default */
-            z-index: 60;
-            backdrop-filter: blur(5px);
-            border: 1px solid rgba(255,255,255,0.1);
-            pointer-events: none; /* Let clicks pass through */
-            transition: opacity 0.3s;
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7); padding: 20px 30px; border-radius: 10px;
+            color: white; font-size: 24px; font-weight: bold; display: none;
+            z-index: 60; backdrop-filter: blur(5px); pointer-events: none; transition: opacity 0.3s;
         }
+
+        /* LOADING SPINNER */
+        .loader-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: black; z-index: 60; display: flex; align-items: center; justify-content: center;
+            pointer-events: none; transition: opacity 0.3s ease;
+        }
+        .spinner {
+            width: 60px; height: 60px; border: 5px solid rgba(255,255,255,0.1);
+            border-top: 5px solid #e50914; border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
         /* INFO SECTION */
         .info-container {
@@ -89,17 +77,13 @@
         .content { position: relative; z-index: 2; display: flex; gap: 35px; max-width: 1200px; margin: auto; align-items: flex-start; }
         
         .poster-card {
-            width: 200px; height: 300px; flex-shrink: 0;
-            border-radius: 12px; overflow: hidden;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-            border: 1px solid rgba(255,255,255,0.1);
-            transform: translateY(-60px);
+            width: 200px; height: 300px; flex-shrink: 0; border-radius: 12px; overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); transform: translateY(-60px);
         }
         .poster-card img { width: 100%; height: 100%; object-fit: cover; }
 
         .text-details { flex-grow: 1; margin-top: 10px; }
         h1 { margin: 0; font-size: 36px; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.5); font-weight: 700; }
-        
         .raw-filename { font-family: 'Consolas', monospace; font-size: 13px; color: #666; margin: 8px 0 20px 0; word-break: break-all; opacity: 0.7; }
 
         .meta-row { display: flex; gap: 12px; align-items: center; margin-bottom: 25px; color: #bbb; font-size: 15px; flex-wrap: wrap; }
@@ -117,9 +101,7 @@
         }
         .btn:hover { background: #fff; color: black; transform: translateY(-2px); }
         .btn-vlc { background: rgba(255, 136, 0, 0.1); border-color: #ff8800; color: #ff8800; }
-        .btn-vlc:hover { background: #ff8800; color: white; border-color: #ff8800; }
         .btn-dl { border-color: #00aaff; color: #00aaff; background: rgba(0, 170, 255, 0.1); }
-        .btn-dl:hover { background: #00aaff; color: white; border-color: #00aaff; }
 
         @media (max-width: 768px) {
             .player-wrapper { height: 40vh; }
@@ -132,7 +114,6 @@
         
         #resume-msg { position:absolute; top: 80px; left: 30px; background: rgba(229, 9, 20, 0.9); color: #fff; padding: 10px 15px; border-radius: 50px; display: none; z-index: 20; font-size: 13px; font-weight: bold; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
 
-        /* SHORTCUTS MODAL */
         .shortcuts-modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.85); align-items: center; justify-content: center; }
         .shortcuts-content { background-color: #1a1a1a; padding: 30px; border: 1px solid #444; border-radius: 12px; width: 90%; max-width: 400px; position: relative; }
         .key-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
@@ -143,20 +124,24 @@
 </head>
 <body>
 
-    <!-- 1. TOP SPACING HEADER -->
-    <div class="top-header">
-        <span>🎬 Smart Movie Server</span>
-    </div>
+    <div class="top-header"><span>🎬 Smart Movie Server</span></div>
 
+    <!-- THIS IS THE CORRECT STRUCTURE -->
     <div class="player-wrapper">
         <a href="javascript:history.back()" class="back-btn" title="Back">⬅</a>
         <div id="resume-msg">🔄 Resuming playback...</div>
         
-        <!-- 2. VISUAL VOLUME OSD -->
+        <!-- Loading Spinner -->
+        <div id="loading-spinner" class="loader-overlay">
+            <div class="spinner"></div>
+        </div>
+        
+        <!-- Volume OSD -->
         <div id="volume-osd">🔊 100%</div>
 
+        <!-- Single Video Tag -->
         <video id="player" playsinline controls crossorigin>
-            <source src="/download/{{ filepath }}" type="video/{{ container|lower if container != 'MKV' else 'mp4' }}">
+            <source src="{{ stream_url }}" type="video/{{ container|lower if container != 'MKV' else 'mp4' }}">
             {% for sub in subtitles %}
                 <track kind="captions" label="{{ sub.label }}" srclang="{{ sub.lang }}" src="{{ sub.src }}" {% if loop.first %}default{% endif %}>
             {% endfor %}
@@ -191,17 +176,13 @@
                 <div class="actions">
                     <button class="btn btn-vlc" onclick="launchVlc()">⚠️ Play in VLC</button>
                     <a href="/download/{{ filepath }}" download class="btn btn-dl">⬇ Download</a>
-                    
-                    <!-- 3. SHORTCUTS BUTTON -->
                     <button class="btn" onclick="openShortcuts()">⌨️ Shortcuts</button>
-                    
                     <button class="btn" onclick="copyStreamLink()">📋 Copy Link</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- SHORTCUTS MODAL -->
     <div id="shortcutsModal" class="shortcuts-modal" onclick="closeShortcuts(event)">
         <div class="shortcuts-content">
             <h3 style="margin-top:0; color:white;">⌨️ Keyboard Controls</h3>
@@ -213,55 +194,55 @@
                 <tr><td>Seek Forward</td><td><span class="key-badge">➡ Right Arrow</span></td></tr>
                 <tr><td>Volume Up</td><td><span class="key-badge">⬆ Up Arrow</span></td></tr>
                 <tr><td>Volume Down</td><td><span class="key-badge">⬇ Down Arrow</span></td></tr>
-                <tr><td>Mute</td><td><span class="key-badge">M</span></td></tr>
             </table>
-            <div style="margin-top:20px; text-align:center; color:#666; font-size:12px;">Click outside to close</div>
         </div>
     </div>
 
-    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+<script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
 <script>
-    // 1. Initialize Player
     const player = new Plyr('#player', {
         controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
         settings: ['speed', 'quality'],
         keyboard: { focused: true, global: true },
         seekTime: 10,
-        // Disable autoplay initially to prevent the "Reset to 0" race condition
         autoplay: false 
     });
 
-    const fileId = "{{ file_id }}";
-    const streamUrl = "{{ stream_url }}";
-    const vlcLink = "{{ vlc_link }}";
-    let hasResumed = false;
+    // --- SPINNER LOGIC (Ensures it hides correctly) ---
+    const spinner = document.getElementById('loading-spinner');
+    function hideSpinner() {
+        spinner.style.opacity = '0';
+        setTimeout(() => { spinner.style.display = 'none'; }, 300);
+    }
+    function showSpinner() {
+        spinner.style.display = 'flex'; spinner.style.opacity = '1';
+    }
 
-    // --- ROBUST RESUME LOGIC ---
+    // Hide immediately when ready (Fixes paused video issue)
+    player.on('ready', hideSpinner);
+    player.on('playing', hideSpinner);
+    player.on('pause', hideSpinner);
+    player.on('waiting', showSpinner);
+    player.on('seeking', showSpinner);
+
+    // --- RESUME LOGIC ---
+    const fileId = "{{ file_id }}";
     player.on('ready', event => {
         const savedTime = localStorage.getItem(fileId);
-        
         if (savedTime && parseFloat(savedTime) > 10) {
-            // Show toast immediately
-            const msg = document.getElementById('resume-msg');
-            msg.style.display = 'block';
-            msg.innerText = "🔄 Resuming from " + formatTime(savedTime);
-            
-            // Force the seek after a tiny delay to ensure browser engine is ready
+            document.getElementById('resume-msg').style.display = 'block';
             setTimeout(() => {
                 player.currentTime = parseFloat(savedTime);
-                player.play(); // Start playing AFTER seeking
-                
-                // Hide toast
-                setTimeout(() => { msg.style.display = 'none'; }, 3000);
+                player.play().catch(() => {}); // Try to play, catch error if browser blocks auto-audio
+                setTimeout(() => { document.getElementById('resume-msg').style.display = 'none'; }, 3000);
             }, 200); 
         } else {
-            // No history? Just play normally
-            player.play();
+            // New video: Just try to play
+            player.play().catch(() => {});
         }
     });
 
-    // --- SAVE PROGRESS (Throttled) ---
-    // We only save every 2 seconds to avoid spamming LocalStorage
+    // Save Progress
     let lastSave = 0;
     player.on('timeupdate', event => {
         const now = Date.now();
@@ -271,38 +252,13 @@
             lastSave = now;
         }
     });
-
-    // Clear progress when movie ends
     player.on('ended', event => { localStorage.removeItem(fileId); });
 
-
-    // --- VOLUME OSD ---
-    const osd = document.getElementById('volume-osd');
-    let osdTimeout;
-    player.on('volumechange', event => {
-        if(player.muted) { osd.innerText = "🔇 Muted"; } 
-        else {
-            const vol = Math.round(player.volume * 100);
-            osd.innerText = (vol > 50 ? "🔊" : vol > 0 ? "🔉" : "🔇") + " " + vol + "%";
-        }
-        osd.style.display = "block"; osd.style.opacity = "1";
-        clearTimeout(osdTimeout);
-        osdTimeout = setTimeout(() => { osd.style.opacity = "0"; setTimeout(() => osd.style.display = "none", 300); }, 1000);
-    });
-
     // --- UTILS ---
-    function formatTime(seconds) {
-        const date = new Date(null);
-        date.setSeconds(seconds);
-        return date.toISOString().substr(11, 8).replace(/^00:/, '');
-    }
-
+    const vlcLink = "{{ vlc_link }}";
+    const streamUrl = "{{ stream_url }}";
     function launchVlc() { window.location.href = vlcLink; }
-    
-    function copyStreamLink() {
-        navigator.clipboard.writeText(streamUrl).then(() => alert("Copied!")).catch(() => prompt("Copy:", streamUrl));
-    }
-    
+    function copyStreamLink() { navigator.clipboard.writeText(streamUrl).then(() => alert("Copied!")).catch(() => prompt("Copy:", streamUrl)); }
     function openShortcuts() { document.getElementById('shortcutsModal').style.display = "flex"; }
     function closeShortcuts(e) { if(e.target.id === 'shortcutsModal') document.getElementById('shortcutsModal').style.display = "none"; }
 </script>

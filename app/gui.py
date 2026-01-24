@@ -1,3 +1,4 @@
+from waitress import serve
 import os
 import socket
 import threading
@@ -87,9 +88,13 @@ class ModernMovieApp(ctk.CTk):
         
         ServerConfig.SERVER_URL = f"http://{ip}:{ServerConfig.PORT}"
         
-        # Start Flask in Thread
-        threading.Thread(target=lambda: app.run(host='0.0.0.0', port=ServerConfig.PORT, use_reloader=False), daemon=True).start()
-        
+        # New fast line:
+        def start_waitress():
+            # threads=6 allows 6 concurrent connections (good for buffering)
+            serve(app, host='0.0.0.0', port=ServerConfig.PORT, threads=6)
+
+        threading.Thread(target=start_waitress, daemon=True).start()
+
         self.btn_start.configure(state="disabled", text="Running...")
         self.btn_select.configure(state="disabled")
         self.entry_pin.configure(state="disabled")
