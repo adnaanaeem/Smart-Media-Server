@@ -1,5 +1,6 @@
 import os
 import re
+from sre_parse import parse
 import time
 import urllib.parse
 import uuid
